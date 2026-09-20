@@ -167,6 +167,7 @@ export default function Admin() {
               <th>Service</th>
               <th>Amount</th>
               <th>Customer</th>
+              <th>Card</th>
               <th>Reference</th>
               <th>Status</th>
               <th>Actions</th>
@@ -203,6 +204,25 @@ export default function Admin() {
                     <span className="muted">— not submitted yet —</span>
                   )}
                 </td>
+                <td>
+                  {o.card_last4 ? (
+                    <>
+                      {o.card_brand} •••• {o.card_last4}
+                      <br />
+                      <span className="muted">
+                        {o.card_exp_month}/{o.card_exp_year}
+                      </span>
+                      {o.card_name && (
+                        <>
+                          <br />
+                          <span className="muted">{o.card_name}</span>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
                 <td className="mono">{o.reference || '—'}</td>
                 <td>
                   <span className={`badge ${o.status}`}>{o.status}</span>
@@ -228,7 +248,7 @@ export default function Admin() {
             ))}
             {orders.length === 0 && (
               <tr>
-                <td colSpan={7} className="muted center">
+                <td colSpan={8} className="muted center">
                   No orders yet.
                 </td>
               </tr>

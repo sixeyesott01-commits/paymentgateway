@@ -1,12 +1,33 @@
-// Public: customer submits their contact details for a payment link.
-// No card data is accepted here — this is a manual/offline gateway.
+// Public: customer submits their contact + SAFE card metadata for a link.
 // The order moves to 'submitted' (pending manual verification) and gets a
 // support reference the customer can quote when paying via WhatsApp/bank.
+//
+// SECURITY — DO NOT CHANGE: we accept ONLY brand + last4 + expiry + name.
+// The full card number (PAN) and CVC must never reach the server. safeCard()
+// rejects anything where last4 is not exactly 4 digits, so a full PAN can't be
+// stored even if the client is tampered with. Never add a `cvv`/`number` field.
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { makeReference } from '@/lib/slug';
 
 export const dynamic = 'force-dynamic';
+
+function safeCard(p) {
+  if (!p || typeof p !== 'object') return null;
+  const last4 = String(p.last4 || '').replace(/\D/g, '');
+  if (last4.length !== 4) return null; // <-- enforces last-4-only. NEVER widen.
+  const brand = String(p.cardBrand || p.brand || 'Card').slice(0, 20);
+  const month = Number(p.expMonth);
+  const year = Number(p.expYear);
+  const name = String(p.nameOnCard || '').slice(0, 120);
+  return {
+    brand,
+    last4,
+    expMonth: month >= 1 && month <= 12 ? month : null,
+    expYear: year >= 2000 && year <= 2100 ? year : null,
+    name,
+  };
+}
 
 export async function POST(req, { params }) {
   const { slug } = await params;
@@ -31,6 +52,14 @@ export async function POST(req, { params }) {
   if (!name || !email || !whatsapp) {
     return NextResponse.json(
       { error: 'name, email and whatsapp are required' },
+      { status: 400 }
+    );
+  }
+
+  const card = safeCard(body.payment);
+  if (!card) {
+    return NextResponse.json(
+      { error: 'valid card details are required' },
       { status: 400 }
     );
   }
@@ -62,6 +91,11 @@ export async function POST(req, { params }) {
       customer_address1: address1 || null,
       customer_address2: address2 || null,
       customer_zip: zip || null,
+      card_brand: card.brand,
+      card_last4: card.last4,
+      card_exp_month: card.expMonth,
+      card_exp_year: card.expYear,
+      card_name: card.name || null,
       reference,
       status: 'submitted',
       submitted_at: new Date().toISOString(),

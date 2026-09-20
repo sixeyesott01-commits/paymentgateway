@@ -26,6 +26,14 @@ create table if not exists public.orders (
   customer_address2 text,
   customer_zip      text,
 
+  -- SAFE card metadata ONLY. No PAN, no CVV — ever. The CHECK constraint makes
+  -- it physically impossible to store more than 4 digits in card_last4.
+  card_brand        text,
+  card_last4        text check (card_last4 is null or card_last4 ~ '^[0-9]{4}$'),
+  card_exp_month    int  check (card_exp_month is null or (card_exp_month between 1 and 12)),
+  card_exp_year     int,
+  card_name         text,
+
   reference         text,        -- e.g. NM-XXXX, shown to customer for support
   note              text,        -- internal admin note
 
@@ -43,8 +51,21 @@ create index if not exists orders_created_idx on public.orders (created_at desc)
 -- clients therefore cannot read or write it directly.
 alter table public.orders enable row level security;
 
--- If the table already existed before the address fields were added, run these
--- (safe to run repeatedly):
+-- If the table already existed before these fields were added, run the block
+-- below (safe to run repeatedly).
 alter table public.orders add column if not exists customer_address1 text;
 alter table public.orders add column if not exists customer_address2 text;
 alter table public.orders add column if not exists customer_zip      text;
+
+alter table public.orders add column if not exists card_brand     text;
+alter table public.orders add column if not exists card_last4     text;
+alter table public.orders add column if not exists card_exp_month int;
+alter table public.orders add column if not exists card_exp_year  int;
+alter table public.orders add column if not exists card_name      text;
+
+-- Enforce last-4-only at the database level (blocks accidentally storing a PAN).
+do $$ begin
+  alter table public.orders
+    add constraint orders_card_last4_chk
+    check (card_last4 is null or card_last4 ~ '^[0-9]{4}$');
+exception when duplicate_object then null; end $$;

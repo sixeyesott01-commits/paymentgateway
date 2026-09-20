@@ -24,6 +24,9 @@ export async function POST(req, { params }) {
   const email = (body.email || '').toString().trim().slice(0, 200);
   const whatsapp = (body.whatsapp || '').toString().trim().slice(0, 40);
   const country = (body.country || '').toString().trim().slice(0, 40);
+  const address1 = (body.address1 || '').toString().trim().slice(0, 200);
+  const address2 = (body.address2 || '').toString().trim().slice(0, 200);
+  const zip = (body.zip || '').toString().trim().slice(0, 20);
 
   if (!name || !email || !whatsapp) {
     return NextResponse.json(
@@ -56,6 +59,9 @@ export async function POST(req, { params }) {
       customer_email: email,
       customer_whatsapp: whatsapp,
       customer_country: country || null,
+      customer_address1: address1 || null,
+      customer_address2: address2 || null,
+      customer_zip: zip || null,
       reference,
       status: 'submitted',
       submitted_at: new Date().toISOString(),

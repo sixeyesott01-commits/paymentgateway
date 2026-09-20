@@ -22,6 +22,9 @@ create table if not exists public.orders (
   customer_email    text,
   customer_whatsapp text,
   customer_country  text,
+  customer_address1 text,
+  customer_address2 text,
+  customer_zip      text,
 
   reference         text,        -- e.g. NM-XXXX, shown to customer for support
   note              text,        -- internal admin note
@@ -39,3 +42,9 @@ create index if not exists orders_created_idx on public.orders (created_at desc)
 -- server using the service role key, which bypasses RLS. Anon/auth browser
 -- clients therefore cannot read or write it directly.
 alter table public.orders enable row level security;
+
+-- If the table already existed before the address fields were added, run these
+-- (safe to run repeatedly):
+alter table public.orders add column if not exists customer_address1 text;
+alter table public.orders add column if not exists customer_address2 text;
+alter table public.orders add column if not exists customer_zip      text;

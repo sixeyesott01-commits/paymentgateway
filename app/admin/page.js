@@ -188,6 +188,16 @@ export default function Admin() {
                       <span className="muted">
                         {o.customer_whatsapp} {o.customer_country ? `· ${o.customer_country}` : ''}
                       </span>
+                      {(o.customer_address1 || o.customer_zip) && (
+                        <>
+                          <br />
+                          <span className="muted">
+                            {[o.customer_address1, o.customer_address2, o.customer_zip]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </span>
+                        </>
+                      )}
                     </>
                   ) : (
                     <span className="muted">— not submitted yet —</span>

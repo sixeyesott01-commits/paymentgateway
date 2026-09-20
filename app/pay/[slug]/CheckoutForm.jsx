@@ -5,7 +5,15 @@ import { useState } from 'react';
 const COUNTRIES = ['US', 'IN', 'GB', 'CA', 'AU', 'AE', 'SG', 'Other'];
 
 export default function CheckoutForm({ slug, whatsapp }) {
-  const [form, setForm] = useState({ name: '', email: '', whatsapp: '', country: 'US' });
+  const [form, setForm] = useState({
+    name: '',
+    email: '',
+    whatsapp: '',
+    country: 'US',
+    address1: '',
+    address2: '',
+    zip: '',
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [done, setDone] = useState(null); // { reference }
@@ -73,12 +81,26 @@ export default function CheckoutForm({ slug, whatsapp }) {
       <label>WhatsApp number</label>
       <input value={form.whatsapp} onChange={set('whatsapp')} placeholder="+1 555 123 4567" />
 
-      <label>Country</label>
-      <select value={form.country} onChange={set('country')}>
-        {COUNTRIES.map((c) => (
-          <option key={c}>{c}</option>
-        ))}
-      </select>
+      <label>Address line 1</label>
+      <input value={form.address1} onChange={set('address1')} placeholder="123 Main St" />
+
+      <label>Address line 2</label>
+      <input value={form.address2} onChange={set('address2')} placeholder="Apt, suite (optional)" />
+
+      <div className="row">
+        <div>
+          <label>ZIP / Postal code</label>
+          <input value={form.zip} onChange={set('zip')} placeholder="10001" />
+        </div>
+        <div>
+          <label>Country</label>
+          <select value={form.country} onChange={set('country')}>
+            {COUNTRIES.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
       {error && <div className="msg err">{error}</div>}
 

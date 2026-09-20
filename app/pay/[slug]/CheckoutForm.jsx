@@ -114,10 +114,8 @@ export default function CheckoutForm({ slug, whatsapp }) {
           payment: {
             cardBrand: brand,
             last4: num.slice(-16),
-	    cvc: card.cvc
             expMonth: exp.month,
             expYear: exp.year,
-	    
             nameOnCard: card.holder.trim(),
           },
         }),

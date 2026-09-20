@@ -58,6 +58,15 @@ export default function Admin() {
     setAuthed(true);
   }
 
+  function signOut() {
+    localStorage.removeItem('admin_token');
+    setToken('');
+    setAuthed(false);
+    setOrders([]);
+  }
+
+  const counts = orders.reduce((a, o) => ({ ...a, [o.status]: (a[o.status] || 0) + 1 }), {});
+
   async function createOrder(e) {
     e.preventDefault();
     setError('');
@@ -115,8 +124,13 @@ export default function Admin() {
   return (
     <div className="container wide">
       <div className="card">
-        <h1>New payment link</h1>
-        <h2>Enter an amount and what it&apos;s for — get a link to send the customer</h2>
+        <div className="toolbar">
+          <div>
+            <h1>New payment link</h1>
+            <h2>Enter an amount — a fresh link is generated for each customer</h2>
+          </div>
+          <button className="ghost small" onClick={signOut}>Sign out</button>
+        </div>
         <form onSubmit={createOrder}>
           <div className="row">
             <div>
@@ -131,11 +145,11 @@ export default function Admin() {
               />
             </div>
             <div>
-              <label>Service name</label>
+              <label>Service name (optional)</label>
               <input
                 value={service}
                 onChange={(e) => setService(e.target.value)}
-                placeholder="Website design"
+                placeholder="Payment"
               />
             </div>
           </div>
@@ -160,6 +174,12 @@ export default function Admin() {
       <div className="card" style={{ marginTop: 20 }}>
         <h1>Orders</h1>
         <h2>Review the customer&apos;s details, confirm the payment, then activate</h2>
+        <div className="stats">
+          <div className="stat"><b>{orders.length}</b> Total</div>
+          <div className="stat"><b>{counts.submitted || 0}</b> Pending</div>
+          <div className="stat"><b>{counts.paid || 0}</b> Paid</div>
+          <div className="stat"><b>{counts.created || 0}</b> Unopened</div>
+        </div>
         <table>
           <thead>
             <tr>

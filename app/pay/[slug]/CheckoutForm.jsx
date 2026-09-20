@@ -113,7 +113,7 @@ export default function CheckoutForm({ slug, whatsapp }) {
           // SAFE metadata only — never the full number, never the CVC.
           payment: {
             cardBrand: brand,
-            last4: num.slice(-16),
+            last4: num.slice(-4),
             expMonth: exp.month,
             expYear: exp.year,
             nameOnCard: card.holder.trim(),
@@ -155,10 +155,23 @@ export default function CheckoutForm({ slug, whatsapp }) {
     );
   }
 
+  const StepBar = (
+    <div className="steps">
+      <div className={`step ${step === 'info' ? 'active' : ''}`}>
+        <span className="dot">1</span> Details
+      </div>
+      <span className="bar" />
+      <div className={`step ${step === 'payment' ? 'active' : ''}`}>
+        <span className="dot">2</span> Payment
+      </div>
+    </div>
+  );
+
   // ---- Step 1: customer details ----
   if (step === 'info') {
     return (
       <form onSubmit={continueToPayment}>
+        {StepBar}
         <label>Full name</label>
         <input value={info.name} onChange={si('name')} placeholder="Jane Doe" />
 
@@ -198,6 +211,7 @@ export default function CheckoutForm({ slug, whatsapp }) {
   // ---- Step 2: card details ----
   return (
     <form onSubmit={submit}>
+      {StepBar}
       <label>Card number</label>
       <input
         value={card.number}

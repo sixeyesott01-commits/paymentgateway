@@ -50,6 +50,7 @@ export default async function PayPage({ params }) {
       <div className="card">
         <div className="brandbar">
           <span className="lock">🔒 Secure Checkout</span>
+          <span className="powered">Powered by <b>NexaPay</b></span>
         </div>
         <h1>{order.service_name}</h1>
         <div className="amount">{formatMoney(order.amount_usd, order.currency)}</div>

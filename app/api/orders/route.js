@@ -7,6 +7,22 @@ import { parseAmount } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
+// Build the public base URL for links. Priority:
+//   1. NEXT_PUBLIC_BASE_URL (set this to your custom domain if you have one)
+//   2. the host the admin is currently on (auto-works on Vercel + custom domains)
+//   3. VERCEL_URL fallback
+function baseUrl(req) {
+  const env = process.env.NEXT_PUBLIC_BASE_URL;
+  if (env) return env.replace(/\/+$/, '');
+  const host = req.headers.get('host');
+  if (host) {
+    const proto = req.headers.get('x-forwarded-proto') || 'https';
+    return `${proto}://${host}`;
+  }
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return '';
+}
+
 // POST /api/orders  { amount, service_name }
 export async function POST(req) {
   if (!checkAdmin(req)) {
@@ -25,11 +41,11 @@ export async function POST(req) {
   }
 
   const amount = parseAmount(body.amount);
-  const serviceName = (body.service_name || '').toString().trim();
+  // Service name is optional — an amount alone is enough to create a link.
+  const serviceName = (body.service_name || '').toString().trim() || 'Payment';
   const currency = (process.env.CURRENCY || 'USD').toUpperCase();
 
   if (!amount) return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 });
-  if (!serviceName) return NextResponse.json({ error: 'service_name is required' }, { status: 400 });
 
   // Unique slug (retry on rare collision).
   let slug = null;
@@ -48,7 +64,7 @@ export async function POST(req) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const base = process.env.NEXT_PUBLIC_BASE_URL || '';
+  const base = baseUrl(req);
   return NextResponse.json({ order: data, link: `${base}/pay/${data.slug}` }, { status: 201 });
 }
 

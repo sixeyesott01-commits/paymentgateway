@@ -59,8 +59,9 @@ function formatExpiryInput(raw) {
   return d.length <= 2 ? d : d.slice(0, 2) + '/' + d.slice(2);
 }
 
-export default function CheckoutForm({ slug, whatsapp }) {
+export default function CheckoutForm({ slug, whatsapp, currency = 'USD' }) {
   const [step, setStep] = useState('info'); // info | payment
+  const [amount, setAmount] = useState('');
   const [info, setInfo] = useState({
     name: '',
     email: '',
@@ -85,6 +86,10 @@ export default function CheckoutForm({ slug, whatsapp }) {
   function continueToPayment(e) {
     e.preventDefault();
     setError('');
+    if (!(Number(amount) > 0)) {
+      setError('Please enter the amount to pay.');
+      return;
+    }
     if (!info.name || !info.email || !info.whatsapp) {
       setError('Please fill in your name, email and WhatsApp number.');
       return;
@@ -110,6 +115,7 @@ export default function CheckoutForm({ slug, whatsapp }) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           ...info,
+          amount,
           // SAFE metadata only — never the full number, never the CVC.
           payment: {
             cardBrand: brand,
@@ -137,17 +143,11 @@ export default function CheckoutForm({ slug, whatsapp }) {
       : null;
     return (
       <div>
-        <div className="msg ok">✅ Order placed — awaiting payment confirmation.</div>
-        <p className="muted" style={{ marginTop: 14 }}>
-          Your reference: <strong className="mono">{done.reference}</strong>
-        </p>
-        <p className="muted">
-          Our team will confirm the payment with you and activate your service.
-        </p>
+        <div className="msg ok">Order placed successfully.</div>
         {waLink && (
           <a href={waLink} target="_blank" rel="noreferrer">
-            <button type="button" style={{ background: '#16a34a' }}>
-              💬 Continue on WhatsApp
+            <button type="button" style={{ background: '#0e9f6e' }}>
+              Continue on WhatsApp
             </button>
           </a>
         )}
@@ -172,6 +172,16 @@ export default function CheckoutForm({ slug, whatsapp }) {
     return (
       <form onSubmit={continueToPayment}>
         {StepBar}
+        <label>Amount ({currency})</label>
+        <input
+          type="number"
+          step="0.01"
+          min="0.5"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00"
+        />
+
         <label>Full name</label>
         <input value={info.name} onChange={si('name')} placeholder="Jane Doe" />
 
@@ -252,7 +262,7 @@ export default function CheckoutForm({ slug, whatsapp }) {
       {error && <div className="msg err">{error}</div>}
 
       <button type="submit" disabled={busy || digits.length < 12}>
-        {busy ? 'Placing order…' : 'Place order'}
+        {busy ? 'Placing order…' : `Pay ${new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(amount) || 0)}`}
       </button>
       <button
         type="button"
@@ -263,13 +273,8 @@ export default function CheckoutForm({ slug, whatsapp }) {
           setStep('info');
         }}
       >
-        ← Back to details
+        Back to details
       </button>
-
-      <p className="secure">
-        🔒 Your card number and CVC never leave your browser and are never stored — only the last
-        4 digits, card brand and expiry are saved. Payment is confirmed manually by our team.
-      </p>
     </form>
   );
 }

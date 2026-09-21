@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 function money(amount, currency) {
+  if (amount == null) return '—';
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: (currency || 'USD').toUpperCase(),
@@ -13,8 +14,6 @@ export default function Admin() {
   const [token, setToken] = useState('');
   const [authed, setAuthed] = useState(false);
   const [orders, setOrders] = useState([]);
-  const [amount, setAmount] = useState('');
-  const [service, setService] = useState('');
   const [newLink, setNewLink] = useState('');
   const [error, setError] = useState('');
 
@@ -67,14 +66,13 @@ export default function Admin() {
 
   const counts = orders.reduce((a, o) => ({ ...a, [o.status]: (a[o.status] || 0) + 1 }), {});
 
-  async function createOrder(e) {
-    e.preventDefault();
+  async function createOrder() {
     setError('');
     setNewLink('');
     const res = await fetch('/api/orders', {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ amount, service_name: service }),
+      body: JSON.stringify({}),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -82,8 +80,6 @@ export default function Admin() {
       return;
     }
     setNewLink(data.link);
-    setAmount('');
-    setService('');
     load();
   }
 
@@ -127,34 +123,11 @@ export default function Admin() {
         <div className="toolbar">
           <div>
             <h1>New payment link</h1>
-            <h2>Enter an amount — a fresh link is generated for each customer</h2>
+            <h2>Create a link and send it — the customer enters the amount and pays</h2>
           </div>
           <button className="ghost small" onClick={signOut}>Sign out</button>
         </div>
-        <form onSubmit={createOrder}>
-          <div className="row">
-            <div>
-              <label>Amount (USD)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0.5"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="49.99"
-              />
-            </div>
-            <div>
-              <label>Service name (optional)</label>
-              <input
-                value={service}
-                onChange={(e) => setService(e.target.value)}
-                placeholder="Payment"
-              />
-            </div>
-          </div>
-          <button type="submit">Create payment link</button>
-        </form>
+        <button onClick={createOrder}>Create new order</button>
         {newLink && (
           <>
             <label>Send this link to the customer:</label>

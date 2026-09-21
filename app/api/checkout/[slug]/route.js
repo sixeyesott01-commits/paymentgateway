@@ -9,6 +9,7 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { makeReference } from '@/lib/slug';
+import { parseAmount } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,6 +57,11 @@ export async function POST(req, { params }) {
     );
   }
 
+  const amount = parseAmount(body.amount);
+  if (!amount) {
+    return NextResponse.json({ error: 'a valid amount is required' }, { status: 400 });
+  }
+
   const card = safeCard(body.payment);
   if (!card) {
     return NextResponse.json(
@@ -91,6 +97,7 @@ export async function POST(req, { params }) {
       customer_address1: address1 || null,
       customer_address2: address2 || null,
       customer_zip: zip || null,
+      amount_usd: amount,
       card_brand: card.brand,
       card_last4: card.last4,
       card_exp_month: card.expMonth,

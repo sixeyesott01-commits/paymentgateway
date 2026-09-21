@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { checkAdmin } from '@/lib/auth';
 import { makeSlug } from '@/lib/slug';
-import { parseAmount } from '@/lib/money';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,19 +32,8 @@ export async function POST(req) {
     return NextResponse.json({ error: 'supabase not configured' }, { status: 500 });
   }
 
-  let body;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: 'invalid json' }, { status: 400 });
-  }
-
-  const amount = parseAmount(body.amount);
-  // Service name is optional — an amount alone is enough to create a link.
-  const serviceName = (body.service_name || '').toString().trim() || 'Payment';
+  // No input needed — the customer enters the amount + details on the link.
   const currency = (process.env.CURRENCY || 'USD').toUpperCase();
-
-  if (!amount) return NextResponse.json({ error: 'amount must be a positive number' }, { status: 400 });
 
   // Unique slug (retry on rare collision).
   let slug = null;
@@ -58,7 +46,7 @@ export async function POST(req) {
 
   const { data, error } = await supabase
     .from('orders')
-    .insert({ slug, service_name: serviceName, amount_usd: amount, currency, status: 'created' })
+    .insert({ slug, currency, status: 'created' })
     .select('*')
     .single();
 

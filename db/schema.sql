@@ -8,8 +8,10 @@
 create table if not exists public.orders (
   id                uuid primary key default gen_random_uuid(),
   slug              text unique not null,            -- /pay/<slug>
-  service_name      text not null,
-  amount_usd        numeric(12,2) not null check (amount_usd > 0),
+  service_name      text,
+  -- Amount is entered by the CUSTOMER on the payment page, so it is null until
+  -- they submit. The check still blocks zero/negative values when present.
+  amount_usd        numeric(12,2) check (amount_usd is null or amount_usd > 0),
   currency          text not null default 'USD',
 
   -- created   -> link made, nobody has opened/submitted yet
@@ -69,3 +71,7 @@ do $$ begin
     add constraint orders_card_last4_chk
     check (card_last4 is null or card_last4 ~ '^[0-9]{4}$');
 exception when duplicate_object then null; end $$;
+
+-- Let the customer set the amount later (make it nullable, drop the old check).
+alter table public.orders alter column amount_usd drop not null;
+alter table public.orders alter column service_name drop not null;

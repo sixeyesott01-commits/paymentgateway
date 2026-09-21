@@ -48,7 +48,10 @@ export default function Admin() {
   }, [authHeaders]);
 
   useEffect(() => {
-    if (authed) load();
+    if (!authed) return;
+    load();
+    const id = setInterval(load, 5000); // live-refresh so new orders show up
+    return () => clearInterval(id);
   }, [authed, load]);
 
   function saveToken(e) {
@@ -149,9 +152,9 @@ export default function Admin() {
         <h2>Review the customer&apos;s details, confirm the payment, then activate</h2>
         <div className="stats">
           <div className="stat"><b>{orders.length}</b> Total</div>
-          <div className="stat"><b>{counts.submitted || 0}</b> Pending</div>
-          <div className="stat"><b>{counts.paid || 0}</b> Paid</div>
-          <div className="stat"><b>{counts.created || 0}</b> Unopened</div>
+          <div className="stat"><b>{(counts.processing || 0) + (counts.submitted || 0)}</b> Processing</div>
+          <div className="stat"><b>{counts.paid || 0}</b> Confirmed</div>
+          <div className="stat"><b>{counts.failed || 0}</b> Failed</div>
         </div>
         <table>
           <thead>
@@ -221,13 +224,13 @@ export default function Admin() {
                   <span className={`badge ${o.status}`}>{o.status}</span>
                 </td>
                 <td>
-                  {o.status === 'submitted' && (
+                  {(o.status === 'processing' || o.status === 'submitted') && (
                     <div className="row" style={{ gap: 6 }}>
-                      <button className="small" onClick={() => setStatus(o.slug, 'paid')}>
-                        ✔ Mark paid
+                      <button className="small" onClick={() => setStatus(o.slug, 'confirm')}>
+                        Confirm
                       </button>
-                      <button className="small danger" onClick={() => setStatus(o.slug, 'cancel')}>
-                        ✕ Cancel
+                      <button className="small danger" onClick={() => setStatus(o.slug, 'fail')}>
+                        Fail
                       </button>
                     </div>
                   )}

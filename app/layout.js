@@ -1,5 +1,5 @@
 export const metadata = {
-  title: 'Payment Gateway',
+  title: 'payunexa',
   description: 'Secure payment links',
 };
 

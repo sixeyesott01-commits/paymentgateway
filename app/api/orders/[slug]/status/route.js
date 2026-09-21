@@ -30,22 +30,32 @@ export async function POST(req, { params }) {
     .maybeSingle();
   if (!order) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
+  const pending = ['submitted', 'processing'];
+
   let update;
-  if (action === 'paid') {
-    if (order.status !== 'submitted') {
+  if (action === 'paid' || action === 'confirm') {
+    if (!pending.includes(order.status)) {
       return NextResponse.json(
-        { error: `only submitted orders can be marked paid (status: ${order.status})` },
+        { error: `only a processing order can be confirmed (status: ${order.status})` },
         { status: 409 }
       );
     }
     update = { status: 'paid', paid_at: new Date().toISOString() };
+  } else if (action === 'fail') {
+    if (!pending.includes(order.status)) {
+      return NextResponse.json(
+        { error: `only a processing order can be failed (status: ${order.status})` },
+        { status: 409 }
+      );
+    }
+    update = { status: 'failed' };
   } else if (action === 'cancel') {
-    if (!['created', 'submitted'].includes(order.status)) {
+    if (!['created', 'submitted', 'processing'].includes(order.status)) {
       return NextResponse.json({ error: `cannot cancel (status: ${order.status})` }, { status: 409 });
     }
     update = { status: 'canceled' };
   } else {
-    return NextResponse.json({ error: 'action must be "paid" or "cancel"' }, { status: 400 });
+    return NextResponse.json({ error: 'action must be "confirm", "fail" or "cancel"' }, { status: 400 });
   }
 
   const { error } = await supabase.from('orders').update(update).eq('id', order.id);

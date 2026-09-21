@@ -47,8 +47,13 @@ export default async function PayPage({ params }) {
     <div className="container">
       <div className="card">
         <div className="brandbar">
+          <span className="logo" aria-label="payunexa">
+            <span className="logo-mark">
+              <span className="logo-dot" />
+            </span>
+            <span className="logo-word">payu<span className="logo-accent">nexa</span></span>
+          </span>
           <span className="lock">Secure Checkout</span>
-          <span className="powered">Powered by <b>NexaPay</b></span>
         </div>
         <CheckoutForm
           slug={order.slug}

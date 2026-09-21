@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const COUNTRIES = ['US', 'IN', 'GB', 'CA', 'AU', 'AE', 'SG', 'Other'];
 
@@ -77,7 +77,26 @@ export default function CheckoutForm({ slug, whatsapp, currency = 'USD' }) {
   const [card, setCard] = useState({ number: '', exp: '', cvc: '', holder: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [done, setDone] = useState(null);
+  // null -> still filling the form. Otherwise one of:
+  //   'processing' (spinner, waiting on the operator), 'paid', 'failed'
+  const [result, setResult] = useState(null);
+
+  // While processing, poll the order status until the operator confirms/fails.
+  useEffect(() => {
+    if (result !== 'processing') return;
+    const id = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/orders/${slug}`, { cache: 'no-store' });
+        const data = await res.json();
+        const s = data?.order?.status;
+        if (s === 'paid') setResult('paid');
+        else if (s === 'failed' || s === 'canceled') setResult('failed');
+      } catch {
+        /* keep polling */
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [result, slug]);
 
   const si = (k) => (e) => setInfo((f) => ({ ...f, [k]: e.target.value }));
   const digits = card.number.replace(/\D/g, '');
@@ -128,29 +147,39 @@ export default function CheckoutForm({ slug, whatsapp, currency = 'USD' }) {
       });
       const data = await res.json();
       if (!res.ok || !data.ok) throw new Error(data.error || 'Something went wrong.');
-      setDone({ reference: data.reference });
+      setResult('processing');
     } catch (err) {
       setError(err.message);
       setBusy(false);
     }
   }
 
-  if (done) {
-    const waLink = whatsapp
-      ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(
-          `Hi, I placed an order. My reference is ${done.reference}. How do I pay?`
-        )}`
-      : null;
+  if (result === 'processing') {
     return (
-      <div>
-        <div className="msg ok">Order placed successfully.</div>
-        {waLink && (
-          <a href={waLink} target="_blank" rel="noreferrer">
-            <button type="button" style={{ background: '#0e9f6e' }}>
-              Continue on WhatsApp
-            </button>
-          </a>
-        )}
+      <div className="result">
+        <div className="spinner-lg" />
+        <div className="result-title">Processing payment</div>
+        <div className="muted">Please wait, do not close or refresh this page…</div>
+      </div>
+    );
+  }
+
+  if (result === 'paid') {
+    return (
+      <div className="result">
+        <div className="result-icon ok">✓</div>
+        <div className="result-title">Payment confirmed</div>
+        <div className="muted">Your payment was successful. Thank you.</div>
+      </div>
+    );
+  }
+
+  if (result === 'failed') {
+    return (
+      <div className="result">
+        <div className="result-icon bad">✕</div>
+        <div className="result-title">Payment failed</div>
+        <div className="muted">Your payment could not be completed. Please try again.</div>
       </div>
     );
   }

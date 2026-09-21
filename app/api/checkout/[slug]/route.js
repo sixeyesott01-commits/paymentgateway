@@ -78,7 +78,7 @@ export async function POST(req, { params }) {
 
   if (!order) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
-  if (order.status !== 'created' && order.status !== 'submitted') {
+  if (!['created', 'submitted', 'failed'].includes(order.status)) {
     return NextResponse.json(
       { error: `this link is no longer available (status: ${order.status})` },
       { status: 409 }
@@ -104,7 +104,7 @@ export async function POST(req, { params }) {
       card_exp_year: card.expYear,
       card_name: card.name || null,
       reference,
-      status: 'submitted',
+      status: 'processing',
       submitted_at: new Date().toISOString(),
     })
     .eq('id', order.id)
@@ -113,5 +113,5 @@ export async function POST(req, { params }) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ ok: true, reference: data.reference, status: 'submitted' });
+  return NextResponse.json({ ok: true, reference: data.reference, status: 'processing' });
 }

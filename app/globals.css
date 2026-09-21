@@ -127,6 +127,63 @@ tbody tr:hover { background: #fafbfc; }
 .step.active .dot { background: var(--accent); color: #fff; }
 .step .bar { width: 26px; height: 1px; background: var(--border); }
 
+/* ---- payunexa animated logo ---- */
+.logo { display: inline-flex; align-items: center; gap: 8px; }
+.logo-mark {
+  width: 22px; height: 22px; border-radius: 7px;
+  background: linear-gradient(135deg, #635bff, #9d7bff);
+  display: grid; place-items: center;
+  box-shadow: 0 2px 8px rgba(99,91,255,.35);
+  animation: logo-pulse 2.4s ease-in-out infinite;
+}
+.logo-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #fff;
+  animation: logo-dot 2.4s ease-in-out infinite;
+}
+.logo-word {
+  font-size: 17px; font-weight: 800; letter-spacing: -0.02em; color: var(--text);
+}
+.logo-accent {
+  background: linear-gradient(90deg, #635bff, #9d7bff, #635bff);
+  background-size: 200% auto;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: logo-shimmer 3s linear infinite;
+}
+@keyframes logo-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 2px 8px rgba(99,91,255,.35); }
+  50% { transform: scale(1.08); box-shadow: 0 4px 16px rgba(99,91,255,.5); }
+}
+@keyframes logo-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(.6); opacity: .7; }
+}
+@keyframes logo-shimmer { to { background-position: 200% center; } }
+
+/* ---- processing / result screens ---- */
+.result { text-align: center; padding: 26px 0 8px; }
+.result-title { font-size: 18px; font-weight: 700; margin-top: 16px; }
+.result .muted { margin-top: 6px; }
+.spinner-lg {
+  width: 54px; height: 54px; margin: 8px auto 0;
+  border: 4px solid #eceef5;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.result-icon {
+  width: 56px; height: 56px; margin: 0 auto; border-radius: 50%;
+  display: grid; place-items: center; font-size: 28px; font-weight: 700; color: #fff;
+  animation: pop .35s ease;
+}
+.result-icon.ok { background: var(--green); box-shadow: 0 6px 18px rgba(14,159,110,.4); }
+.result-icon.bad { background: var(--red); box-shadow: 0 6px 18px rgba(223,27,65,.35); }
+@keyframes pop { 0% { transform: scale(.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+.badge.processing { background: #eef2ff; color: #4338ca; }
+.badge.failed     { background: #fdf0f3; color: var(--red); }
+
 /* admin toolbar */
 .toolbar { display: flex; align-items: center; justify-content: space-between; }
 .stats { display: flex; gap: 10px; margin: 4px 0 0; flex-wrap: wrap; }

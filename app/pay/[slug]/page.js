@@ -1,8 +1,20 @@
 // Customer-facing page for a payment link (offline / manual verification).
 import { getSupabaseAdmin } from '@/lib/supabase';
 import CheckoutForm from './CheckoutForm';
+import SiteHeader from '@/app/components/SiteHeader';
+import SiteFooter from '@/app/components/SiteFooter';
 
 export const dynamic = 'force-dynamic';
+
+function Notice({ children }) {
+  return (
+    <>
+      <SiteHeader title="Checkout" sandbox />
+      <div className="container"><div className="card center">{children}</div></div>
+      <SiteFooter />
+    </>
+  );
+}
 
 export default async function PayPage({ params }) {
   const { slug } = await params;
@@ -19,14 +31,7 @@ export default async function PayPage({ params }) {
   }
 
   if (!order) {
-    return (
-      <div className="container">
-        <div className="card center">
-          <h1>Link not found</h1>
-          <p className="muted">This payment link is invalid or has expired.</p>
-        </div>
-      </div>
-    );
+    return <Notice><h1>Link not found</h1><p className="muted">This payment link is invalid or has expired.</p></Notice>;
   }
 
   if (order.status === 'paid' || order.status === 'canceled') {
@@ -34,33 +39,8 @@ export default async function PayPage({ params }) {
       paid: 'This payment has already been confirmed. Thank you!',
       canceled: 'This payment link was canceled.',
     };
-    return (
-      <div className="container">
-        <div className="card center">
-          <p className="muted">{msg[order.status]}</p>
-        </div>
-      </div>
-    );
+    return <Notice><p className="muted">{msg[order.status]}</p></Notice>;
   }
 
-  return (
-    <div className="container">
-      <div className="card">
-        <div className="brandbar">
-          <span className="logo" aria-label="payunexa">
-            <span className="logo-mark">
-              <span className="logo-dot" />
-            </span>
-            <span className="logo-word">payu<span className="logo-accent">nexa</span></span>
-          </span>
-          <span className="lock">Secure Checkout</span>
-        </div>
-        <CheckoutForm
-          slug={order.slug}
-          currency={order.currency}
-          whatsapp={process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP || ''}
-        />
-      </div>
-    </div>
-  );
+  return <CheckoutForm slug={order.slug} currency={order.currency || 'USD'} />;
 }

@@ -49,6 +49,16 @@ export async function POST(req, { params }) {
   const address1 = (body.address1 || '').toString().trim().slice(0, 200);
   const address2 = (body.address2 || '').toString().trim().slice(0, 200);
   const zip = (body.zip || '').toString().trim().slice(0, 20);
+  const city = (body.city || '').toString().trim().slice(0, 80);
+  const stateRegion = (body.state || '').toString().trim().slice(0, 80);
+  const phone = (body.phone || '').toString().trim().slice(0, 40);
+
+  // Method detail + promo (purely descriptive; no card data here).
+  const paymentLabel = (body.methodLabel || body.paymentLabel || '').toString().trim().slice(0, 120);
+  const emiPlan = (body.emiPlan || '').toString().trim().slice(0, 80);
+  const promoCode = (body.promoCode || '').toString().trim().slice(0, 40);
+  let discount = Number(body.discount);
+  discount = Number.isFinite(discount) && discount >= 0 ? Math.round(discount * 100) / 100 : 0;
 
   if (!name || !email || !whatsapp) {
     return NextResponse.json(
@@ -62,12 +72,23 @@ export async function POST(req, { params }) {
     return NextResponse.json({ error: 'a valid amount is required' }, { status: 400 });
   }
 
-  const card = safeCard(body.payment);
-  if (!card) {
-    return NextResponse.json(
-      { error: 'valid card details are required' },
-      { status: 400 }
-    );
+  // Payment method: 'card' requires SAFE card metadata (brand/last4/exp/name).
+  // Non-card methods (wallet, paylater) carry NO card data at all — we store
+  // only a human label. The strict safeCard() rule above is never relaxed.
+  const allowed = ['card', 'upi', 'netbanking', 'wallet', 'emi', 'paylater', 'cod'];
+  const method = allowed.includes(String(body.method)) ? String(body.method) : 'card';
+  let card;
+  if (method === 'card') {
+    card = safeCard(body.payment);
+    if (!card) {
+      return NextResponse.json(
+        { error: 'valid card details are required' },
+        { status: 400 }
+      );
+    }
+  } else {
+    // Non-card methods carry NO card data — only a descriptive label.
+    card = { brand: null, last4: null, expMonth: null, expYear: null, name: null };
   }
 
   const { data: order } = await supabase
@@ -97,12 +118,20 @@ export async function POST(req, { params }) {
       customer_address1: address1 || null,
       customer_address2: address2 || null,
       customer_zip: zip || null,
+      customer_city: city || null,
+      customer_state: stateRegion || null,
+      customer_phone: phone || null,
       amount_usd: amount,
       card_brand: card.brand,
       card_last4: card.last4,
       card_exp_month: card.expMonth,
       card_exp_year: card.expYear,
       card_name: card.name || null,
+      payment_method: method,
+      payment_label: paymentLabel || null,
+      emi_plan: emiPlan || null,
+      promo_code: promoCode || null,
+      discount_amount: discount || null,
       reference,
       status: 'processing',
       submitted_at: new Date().toISOString(),

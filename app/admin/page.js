@@ -215,6 +215,8 @@ export default function Admin() {
                         </>
                       )}
                     </>
+                  ) : o.payment_label ? (
+                    <span>{o.payment_label}</span>
                   ) : (
                     <span className="muted">—</span>
                   )}

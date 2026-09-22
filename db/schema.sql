@@ -75,3 +75,33 @@ exception when duplicate_object then null; end $$;
 -- Let the customer set the amount later (make it nullable, drop the old check).
 alter table public.orders alter column amount_usd drop not null;
 alter table public.orders alter column service_name drop not null;
+
+-- ============================================================
+-- Checkout v2 — richer checkout UI (address book, method types,
+-- promo, shipping). Additive + idempotent. No PAN/CVC ever.
+-- ============================================================
+alter table public.orders add column if not exists customer_city   text;
+alter table public.orders add column if not exists customer_state  text;
+alter table public.orders add column if not exists customer_phone  text;
+
+alter table public.orders add column if not exists payment_method  text;
+alter table public.orders add column if not exists payment_label   text;
+alter table public.orders add column if not exists emi_plan         text;
+
+alter table public.orders add column if not exists promo_code      text;
+alter table public.orders add column if not exists discount_amount numeric(12,2)
+  check (discount_amount is null or discount_amount >= 0);
+
+alter table public.orders add column if not exists shipping_method text;
+alter table public.orders add column if not exists shipping_amount numeric(12,2)
+  check (shipping_amount is null or shipping_amount >= 0);
+alter table public.orders add column if not exists tax_amount      numeric(12,2)
+  check (tax_amount is null or tax_amount >= 0);
+alter table public.orders add column if not exists gift_wrap       boolean not null default false;
+
+do $$ begin
+  alter table public.orders
+    add constraint orders_payment_method_chk
+    check (payment_method is null or payment_method in
+      ('card','upi','netbanking','wallet','emi','paylater','cod'));
+exception when duplicate_object then null; end $$;

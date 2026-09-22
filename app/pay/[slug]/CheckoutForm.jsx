@@ -7,7 +7,7 @@ import SiteFooter from '@/app/components/SiteFooter';
 
 const COUNTRIES = ['US', 'IN', 'GB', 'CA', 'AU', 'AE', 'SG', 'Other'];
 const BANKS = ['HDFC Bank', 'ICICI Bank', 'State Bank of India', 'Axis Bank', 'Kotak Mahindra Bank', 'Citibank', 'Chase', 'Bank of America', 'Barclays', 'HSBC'];
-// Demo promo codes (sandbox). flat = fixed off in order currency; pct = fraction.
+// Demo promo codes (). flat = fixed off in order currency; pct = fraction.
 const CODES = { SAVE10: { type: 'pct', value: 0.10, kind: 'Promo code' }, WELCOME5: { type: 'flat', value: 5, kind: 'Gift card' } };
 const COD_FEE = 0.99;
 const BRAND_BADGE = { visa: 'visa', mastercard: 'mc', amex: 'amex', rupay: 'rupay', discover: 'discover', unknown: 'unk' };
@@ -63,15 +63,13 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const money = (n) => new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(n) || 0);
 
   const [view, setView] = useState('checkout');        // checkout | success
+  const [step, setStep] = useState(0);                 // 0 details | 1 payment | 2 review
   const [detailsDone, setDetailsDone] = useState(false);
   const [amount, setAmount] = useState('');
   const [info, setInfo] = useState({ name: '', email: '', whatsapp: '', phone: '', country: 'US', address1: '', address2: '', city: '', state: '', zip: '' });
 
   const [method, setMethod] = useState(null);
-  const [savedCards, setSavedCards] = useState([
-    { key: 'card1', brand: 'visa', bank: 'HDFC Bank Visa', last4: '4589', name: 'Card Holder', exp: '09/26', expMonth: 9, expYear: 2026 },
-    { key: 'card2', brand: 'mastercard', bank: 'ICICI Bank Mastercard', last4: '2231', name: 'Card Holder', exp: '03/27', expMonth: 3, expYear: 2027 },
-  ]);
+  const [savedCards, setSavedCards] = useState([]);
   const [cvv, setCvv] = useState({});
   const [nc, setNc] = useState({ number: '', exp: '', cvc: '', holder: '' });
   const [upi, setUpi] = useState({ id: '', ok: false, label: '', msg: null });
@@ -164,6 +162,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     if (!(amt > 0)) return toast('Enter the amount to pay', 'error');
     if (!info.name || !info.email || !info.whatsapp) return toast('Fill name, email and WhatsApp', 'error');
     setDetailsDone(true);
+    setStep(1);
     toast('Details saved');
   }
 
@@ -283,7 +282,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     const emailMask = info.email.replace(/^(.{2}).*(@.*)$/, '$1••••$2');
     return (
       <>
-        <SiteHeader title="Order confirmed" sandbox />
+        <SiteHeader title="Order confirmed"  />
         <section className="success-screen">
           <div className="succ-card">
             <div className="succ-anim">
@@ -318,7 +317,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     );
   }
 
-  const stepIdx = !detailsDone ? 0 : !ready() ? 1 : 2;
+  const stepIdx = step;
   const Step = ({ i, label }) => (
     <div className={`step ${i === stepIdx ? 'active' : ''} ${i < stepIdx ? 'done' : ''}`}>
       <span className="dot">{i < stepIdx ? '✓' : i + 1}</span><span>{label}</span>
@@ -341,7 +340,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   /* ================= CHECKOUT ================= */
   return (
     <>
-      <SiteHeader title="Checkout" sandbox />
+      <SiteHeader title="Checkout"  />
 
       <div className="steps">
         <Step i={0} label="Your details" />
@@ -354,8 +353,8 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
       <div className="grid">
         <div className="col-main">
           {/* ---------- 1. DETAILS ---------- */}
+          {step === 0 && (
           <div className="card">
-            {!detailsDone ? (
               <form onSubmit={saveDetails}>
                 <h2><span className="stepnum">1</span> Your details</h2>
                 <div className="form-grid" style={{ marginTop: 14 }}>
@@ -375,20 +374,11 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                 </div>
                 <button className="btn-primary sm" type="submit" style={{ marginTop: 14 }}>Save &amp; continue</button>
               </form>
-            ) : (
-              <div className="addr-flex">
-                <div>
-                  <h2 style={{ fontSize: 17 }}><span className="stepnum">✓</span> Your details</h2>
-                  <div className="addr-name" style={{ marginTop: 14 }}>{info.name} · {money(amt)}</div>
-                  <div className="addr-line">{info.email} · {info.whatsapp}</div>
-                  {info.address1 && <div className="addr-ph">{[info.address1, info.address2, info.city, info.state, info.zip, info.country].filter(Boolean).join(', ')}</div>}
-                </div>
-                <button className="linklike" style={{ fontWeight: 600 }} onClick={() => setDetailsDone(false)}>Change</button>
-              </div>
-            )}
           </div>
+          )}
 
           {/* ---------- 2. PAYMENT METHOD ---------- */}
+          {step === 1 && (
           <div className="card">
             <div className="addr-flex">
               <h2><span className="stepnum">2</span> Payment method</h2>
@@ -421,8 +411,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
 
             {/* saved + new cards */}
             <div className="pmt-group">
-              <div className="pmt-group-title">Credit &amp; debit cards</div>
-              <div className="cards-cols"><span /><span /><span /><span>Name on card</span><span>Expires</span><span /></div>
+              <div className="pmt-group-title">Cards</div>
               {savedCards.map((c) => (
                 <div key={c.key} className={`payopt saved-card ${method === c.key ? 'selected' : ''}`} onClick={() => setMethod(c.key)}>
                   <input type="radio" name="pay" readOnly checked={method === c.key} />
@@ -473,52 +462,6 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
               </div>
             </div>
 
-            {/* UPI */}
-            <div className="pmt-group">
-              <div className="pmt-group-title">Pay by UPI</div>
-              <PayOpt mkey="upi" title="UPI" sub="Pay instantly from any UPI app" tags="GPay · PhonePe · Paytm · BHIM"
-                ico={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5" /><line x1="10.5" y1="18" x2="13.5" y2="18" /></svg>}>
-                <div className="upi-grid">
-                  <div>
-                    <div className="field"><label>Your UPI ID</label></div>
-                    <div className="upi-row">
-                      <input className="ti" placeholder="yourname@bank" value={upi.id} onChange={(e) => setUpi({ ...upi, id: e.target.value })} />
-                      <button className="btn-secondary" type="button" onClick={() => {
-                        if (/^[a-zA-Z0-9._-]{2,}@[a-zA-Z]{2,}$/.test(upi.id.trim())) { setUpi({ ...upi, ok: true, label: upi.id.trim(), msg: { type: 'success', t: 'Verified — a collect request will be sent to ' + upi.id.trim() } }); toast('UPI ID verified'); }
-                        else setUpi({ ...upi, ok: false, msg: { type: 'error', t: 'Invalid UPI ID. Format: name@bank' } });
-                      }}>Verify</button>
-                    </div>
-                    {upi.msg && <div className={`inline-msg ${upi.msg.type}`}>{upi.msg.t}</div>}
-                    <div className="mini-label">Or choose an app</div>
-                    <div className="chips">{['Google Pay', 'PhonePe', 'Paytm', 'BHIM UPI'].map((a) => (
-                      <button type="button" key={a} className={`chip ${upi.label === a ? 'active' : ''}`} onClick={() => setUpi({ id: '', ok: true, label: a, msg: { type: 'success', t: 'You will approve the payment inside ' + a } })}>{a}</button>
-                    ))}</div>
-                  </div>
-                  <div>
-                    <QR />
-                    <div className="qr-cap">Scan &amp; pay via any UPI app</div>
-                    <button className="btn-ghost" type="button" style={{ display: 'block', margin: '0 auto' }} onClick={() => { setUpi({ id: '', ok: true, label: 'QR code', msg: { type: 'success', t: 'QR scanned — approve in your UPI app' } }); toast('QR scan simulated'); }}>Simulate successful scan</button>
-                  </div>
-                </div>
-              </PayOpt>
-            </div>
-
-            {/* Net banking */}
-            <div className="pmt-group">
-              <div className="pmt-group-title">Net banking</div>
-              <PayOpt mkey="netbanking" title="Net Banking" sub="All major banks supported" tags="HDFC · ICICI · Chase · HSBC + more"
-                ico={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10l9-6 9 6v1H3z" /><path d="M5 11v7M9.5 11v7M14.5 11v7M19 11v7" /><path d="M3 20h18" /></svg>}>
-                <div className="mini-label">Popular banks</div>
-                <div className="chips">{BANKS.slice(0, 6).map((b) => (
-                  <button type="button" key={b} className={`chip ${bank === b ? 'active' : ''}`} onClick={() => setBank(b)}>{b}</button>
-                ))}</div>
-                <select className="select" value={BANKS.slice(6).includes(bank) ? bank : ''} onChange={(e) => e.target.value && setBank(e.target.value)}>
-                  <option value="">— Choose another bank —</option>{BANKS.slice(6).map((b) => <option key={b}>{b}</option>)}
-                </select>
-                {bank && <div className="pick-note">You will be redirected to {bank}&apos;s secure portal to complete the payment.</div>}
-              </PayOpt>
-            </div>
-
             {/* Wallets */}
             <div className="pmt-group">
               <div className="pmt-group-title">Wallets</div>
@@ -550,17 +493,15 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
               </PayOpt>
             </div>
 
-            {/* COD */}
-            <div className="pmt-group">
-              <div className="pmt-group-title">Cash on delivery</div>
-              <PayOpt mkey="cod" title="Cash on Delivery" sub="Pay when your order is delivered" tags={`+${money(COD_FEE)} handling`}
-                ico={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="2.5" y="7" width="19" height="10" rx="2" /><circle cx="12" cy="12" r="2.4" /></svg>}>
-                <div className="secure-note">A <b>&nbsp;{money(COD_FEE)}&nbsp;</b> handling fee is applied to COD orders. Please keep exact change ready.</div>
-              </PayOpt>
+            <div className="wiz-nav">
+              <button className="btn-secondary" type="button" onClick={() => setStep(0)}>Back</button>
+              <button className="btn-primary sm" type="button" disabled={!ready()} onClick={() => ready() && setStep(2)}>Continue to review</button>
             </div>
           </div>
+          )}
 
           {/* ---------- 3. REVIEW ---------- */}
+          {step === 2 && (
           <div className="card">
             <h2><span className="stepnum">3</span> Review &amp; place order</h2>
             <div className="rev-row"><span className="rev-lbl">Paying to</span><span className="rev-val">payUnexa merchant</span></div>
@@ -570,16 +511,20 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
             {discount > 0 && <div className="rev-row"><span className="rev-lbl">Discount ({gift.code})</span><span className="rev-val">−{money(discount)}</span></div>}
             {codFee > 0 && <div className="rev-row"><span className="rev-lbl">COD handling</span><span className="rev-val">{money(codFee)}</span></div>}
             <div className="rev-row"><span className="rev-lbl"><b>Total</b></span><span className="rev-val"><b>{money(total)}</b></span></div>
+            <div className="wiz-nav">
+              <button className="btn-secondary" type="button" onClick={() => setStep(1)}>Back</button>
+            </div>
           </div>
+          )}
         </div>
 
         {/* ---------- ASIDE ---------- */}
         <aside>
           <div className="card">
-            <button className="btn-primary big" disabled={!detailsDone || !ready()} onClick={placeOrder}>
-              {detailsDone && ready() ? `Pay ${money(total)}` : 'Complete the steps to pay'}
+            <button className="btn-primary big" disabled={step < 2 || !ready()} onClick={placeOrder}>
+              {step === 2 && ready() ? `Pay ${money(total)}` : 'Complete the steps to pay'}
             </button>
-            <div className="btn-hint">{!detailsDone ? 'Enter your details first' : !method ? 'Choose a payment method' : !ready() ? 'Finish the selected method' : 'You will be charged securely'}</div>
+            <div className="btn-hint">{step === 0 ? 'Enter your details first' : step === 1 ? (!method ? 'Choose a payment method' : !ready() ? 'Finish the selected method' : 'Continue to review') : 'You will be charged securely'}</div>
             <hr />
             <div className="sum-title">Order Summary</div>
             <div className="sum-line"><span>Amount</span><span>{money(amt)}</span></div>

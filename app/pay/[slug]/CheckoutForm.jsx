@@ -178,8 +178,8 @@ export default function CheckoutForm({ slug, whatsapp, currency = 'USD' }) {
     return (
       <div className="result">
         <div className="result-icon bad">✕</div>
-        <div className="result-title">Payment failed</div>
-        <div className="muted">Your payment could not be completed. Please try again.</div>
+        <div className="result-title">Payment Declined</div>
+        <div className="muted">Your Card was declined by your bank. </div>
       </div>
     );
   }

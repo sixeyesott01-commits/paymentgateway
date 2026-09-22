@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import SiteHeader from '@/app/components/SiteHeader';
+import SiteFooter from '@/app/components/SiteFooter';
 
 function money(amount, currency) {
   if (amount == null) return '—';
@@ -100,28 +102,34 @@ export default function Admin() {
 
   if (!authed) {
     return (
-      <div className="container">
-        <div className="card">
-          <h1>Admin access</h1>
-          <h2>Enter the admin token (ADMIN_TOKEN from your env)</h2>
-          <form onSubmit={saveToken}>
-            <label>Admin token</label>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="••••••••••••"
-            />
-            {error && <div className="msg err">{error}</div>}
-            <button type="submit">Unlock</button>
-          </form>
+      <>
+        <SiteHeader title="Admin" />
+        <div className="container">
+          <div className="card">
+            <h1>Admin access</h1>
+            <h2>Enter the admin token (ADMIN_TOKEN from your env)</h2>
+            <form onSubmit={saveToken}>
+              <label>Admin token</label>
+              <input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="••••••••••••"
+              />
+              {error && <div className="msg err">{error}</div>}
+              <button type="submit">Unlock</button>
+            </form>
+          </div>
         </div>
-      </div>
+        <SiteFooter />
+      </>
     );
   }
 
   return (
-    <div className="container wide">
+    <>
+      <SiteHeader title="Admin" />
+      <div className="container wide">
       <div className="card">
         <div className="toolbar">
           <div>
@@ -257,6 +265,8 @@ export default function Admin() {
           Refresh
         </button>
       </div>
-    </div>
+      </div>
+      <SiteFooter />
+    </>
   );
 }

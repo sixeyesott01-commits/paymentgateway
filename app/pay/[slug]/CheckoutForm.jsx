@@ -10,6 +10,27 @@ const BANKS = ['HDFC Bank', 'ICICI Bank', 'State Bank of India', 'Axis Bank', 'K
 // Demo promo codes (). flat = fixed off in order currency; pct = fraction.
 const CODES = { SAVE10: { type: 'pct', value: 0.10, kind: 'Promo code' }, WELCOME5: { type: 'flat', value: 5, kind: 'Gift card' } };
 const COD_FEE = 0.99;
+// Where the customer lands after a completed payment.
+const HOME_URL = 'https://payunexa.com';
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const MAX_AMOUNT = 9999;
+const SUPPORTED_BRANDS = ['visa', 'mastercard'];
+
+// Per-country dialling code + expected national-number length for WhatsApp.
+const DIAL = { US: '+1', CA: '+1', IN: '+91', GB: '+44', AU: '+61', AE: '+971', SG: '+65' };
+const NSN_LEN = { US: 10, CA: 10, IN: 10, GB: 10, AU: 9, AE: 9, SG: 8 };
+function validateWhatsapp(country, raw) {
+  const cleaned = String(raw || '').replace(/[^\d+]/g, '');
+  const cc = DIAL[country];
+  if (!cc) { // 'Other' / unknown — accept any E.164-ish number
+    const digits = cleaned.replace(/\D/g, '');
+    return cleaned.startsWith('+') && digits.length >= 8 && digits.length <= 15;
+  }
+  if (!cleaned.startsWith(cc)) return false;
+  const nsn = cleaned.slice(cc.length).replace(/\D/g, '');
+  const need = NSN_LEN[country];
+  return need ? nsn.length === need : (nsn.length >= 6 && nsn.length <= 12);
+}
 const BRAND_BADGE = { visa: 'visa', mastercard: 'mc', amex: 'amex', rupay: 'rupay', discover: 'discover', unknown: 'unk' };
 const BRAND_TEXT = { visa: 'VISA', mastercard: 'mastercard', amex: 'AMEX', rupay: 'RuPay', discover: 'DISC', unknown: 'CARD' };
 
@@ -154,13 +175,23 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [result]);
 
+  // After a completed payment, send the customer to the payUnexa homepage.
+  // Delayed so they can download the invoice first.
+  useEffect(() => {
+    if (view !== 'success') return;
+    const t = setTimeout(() => { window.location.href = HOME_URL; }, 12000);
+    return () => clearTimeout(t);
+  }, [view]);
+
   const si = (k) => (e) => setInfo((f) => ({ ...f, [k]: e.target.value }));
 
   function saveDetails(e) {
     e.preventDefault();
     setPayErr('');
     if (!(amt > 0)) return toast('Enter the amount to pay', 'error');
+    if (amt > MAX_AMOUNT) return toast(`Amount cannot exceed ${money(MAX_AMOUNT)}`, 'error');
     if (!info.name || !info.email || !info.whatsapp) return toast('Fill name, email and WhatsApp', 'error');
+    if (!validateWhatsapp(info.country, info.whatsapp)) return toast(`Enter a valid WhatsApp number for ${info.country} (starts with ${DIAL[info.country] || '+ country code'})`, 'error');
     setDetailsDone(true);
     setStep(1);
     toast('Details saved');
@@ -185,8 +216,10 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     if (!exp) errs.push('Expiry (MM/YY)');
     if (nc.cvc.length < 3) errs.push('CVV');
     if (errs.length) { setNcErr('Please check: ' + errs.join(', ')); return; }
+    const brand = detectBrand(num);
+    if (!SUPPORTED_BRANDS.includes(brand)) { setNcErr('Only Visa and Mastercard cards are supported.'); return; }
     setNcErr('');
-    const brand = detectBrand(num), last4 = num.slice(-4);
+    const last4 = num.slice(-4);
     const key = 'cardNew' + (savedCards.filter((c) => c.key.startsWith('cardNew')).length + 1);
     const card = { key, brand, bank: NETWORK_LABEL[brand] + ' card', last4, name: nc.holder.trim(), exp: nc.exp, expMonth: exp.month, expYear: exp.year, isNew: true };
     setSavedCards((s) => [card, ...s]);
@@ -253,23 +286,74 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     }
   }
 
+  // Full tax-style invoice opened in a new window; the customer saves it as a
+  // PDF via the browser print dialog (Save as PDF).
   function downloadInvoice() {
-    const L = [
-      'payUnexa — PAYMENT RECEIPT', '='.repeat(40),
-      'Reference : ' + reference,
-      'Date      : ' + new Date().toLocaleString(),
-      'Payment   : ' + methodLabel(),
-      '', 'BILL TO',
-      `${info.name}, ${[info.address1, info.city, info.state, info.zip, info.country].filter(Boolean).join(', ')}`,
-      '', 'Amount   : ' + money(amt),
-      ...(discount ? ['Discount : -' + money(discount)] : []),
-      ...(codFee ? ['COD fee  : ' + money(codFee)] : []),
-      'TOTAL    : ' + money(total), '',
-      'Thank you for paying with payUnexa.',
-    ];
-    const url = URL.createObjectURL(new Blob([L.join('\n')], { type: 'text/plain' }));
-    const a = document.createElement('a'); a.href = url; a.download = 'payunexa-receipt.txt'; a.click(); URL.revokeObjectURL(url);
-    toast('Receipt downloaded');
+    const now = new Date();
+    const billing = [info.address1, info.address2, info.city, info.state, info.zip, info.country].filter(Boolean).join(', ');
+    const contactRows = [
+      info.whatsapp && `WhatsApp: ${esc(info.whatsapp)}`,
+      info.phone && `Phone: ${esc(info.phone)}`,
+      info.email && `Email: ${esc(info.email)}`,
+    ].filter(Boolean).map((l) => `<div>${l}</div>`).join('');
+    const lineItems = [
+      `<tr><td>Amount</td><td class="r">${esc(money(amt))}</td></tr>`,
+      discount ? `<tr><td>Discount${gift?.code ? ` (${esc(gift.code)})` : ''}</td><td class="r">−${esc(money(discount))}</td></tr>` : '',
+      codFee ? `<tr><td>COD handling fee</td><td class="r">${esc(money(codFee))}</td></tr>` : '',
+    ].join('');
+
+    const html = `<!doctype html><html><head><meta charset="utf-8">
+<title>payUnexa Invoice ${esc(reference)}</title>
+<style>
+ *{box-sizing:border-box} body{font:14px/1.55 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0F1111;margin:0;padding:40px;background:#fff}
+ .inv{max-width:720px;margin:0 auto;border:1px solid #e5e7eb;border-radius:12px;padding:34px 38px}
+ .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #0F1111;padding-bottom:18px;margin-bottom:26px}
+ .brand{font-size:24px;font-weight:800;letter-spacing:-.5px}.brand .u{color:#FF9900}
+ .brand small{display:block;font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.3px;margin-top:2px}
+ .meta{text-align:right;font-size:12.5px;color:#374151}.meta .t{font-size:15px;font-weight:800;color:#0F1111;letter-spacing:1px}
+ .paidtag{display:inline-block;margin-top:6px;font-size:11px;font-weight:800;color:#066A53;background:#EDF7F2;border:1px solid #B7DFCF;padding:2px 10px;border-radius:999px}
+ .cols{display:flex;gap:36px;margin-bottom:26px}.cols>div{flex:1}
+ h3{font-size:11px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;color:#6b7280;margin:0 0 8px}
+ .name{font-size:15px;font-weight:700}.muted{color:#4b5563;font-size:13px}
+ table{width:100%;border-collapse:collapse;margin-top:6px}td{padding:11px 0;border-bottom:1px solid #eee;font-size:14px}.r{text-align:right}
+ .total td{border-top:2px solid #0F1111;border-bottom:none;font-weight:800;font-size:17px;padding-top:15px}
+ .foot{margin-top:30px;border-top:1px solid #eee;padding-top:16px;font-size:12px;color:#6b7280;text-align:center}
+ @media print{body{padding:0}.inv{border:none}}
+</style></head>
+<body><div class="inv">
+ <div class="top">
+   <div class="brand">pay<span class="u">Unexa</span><small>payUnexa Technologies · PCI-DSS Level 1</small></div>
+   <div class="meta"><div class="t">INVOICE</div>${esc(reference || '—')}<br>${esc(now.toLocaleString())}<div class="paidtag">PAID</div></div>
+ </div>
+ <div class="cols">
+   <div>
+     <h3>Billed to</h3>
+     <div class="name">${esc(info.name || '—')}</div>
+     ${billing ? `<div class="muted">${esc(billing)}</div>` : ''}
+     <div style="margin-top:8px">${contactRows}</div>
+   </div>
+   <div>
+     <h3>Payment</h3>
+     <div class="muted">Method: ${esc(methodLabel())}</div>
+     <div class="muted">Status: Paid</div>
+     <div class="muted">Currency: ${esc(currency)}</div>
+     <div class="muted">Reference: ${esc(reference || '—')}</div>
+   </div>
+ </div>
+ <table><tbody>
+   ${lineItems}
+   <tr class="total"><td>Amount paid</td><td class="r">${esc(money(total))}</td></tr>
+ </tbody></table>
+ <div class="foot">Thank you for paying with payUnexa. This invoice was generated on ${esc(now.toLocaleDateString())}. For help, contact support via your payment confirmation email.</div>
+</div>
+<script>window.onload=function(){setTimeout(function(){window.print();},250);};</script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) { toast('Allow pop-ups to download the invoice', 'error'); return; }
+    w.document.write(html);
+    w.document.close();
+    toast('Invoice ready — Save as PDF');
   }
 
   const INFO = {
@@ -307,9 +391,10 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
               </div>
             </div>
             <div className="succ-actions">
-              <button className="btn-primary" onClick={downloadInvoice}>Download receipt</button>
-              <button className="btn-secondary" onClick={() => location.reload()}>Done</button>
+              <button className="btn-primary" onClick={downloadInvoice}>Download invoice (PDF)</button>
+              <button className="btn-secondary" onClick={() => { window.location.href = HOME_URL; }}>Go to payUnexa.com</button>
             </div>
+            <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to payUnexa.com in a few seconds…</p>
           </div>
         </section>
         <SiteFooter />
@@ -358,11 +443,11 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
               <form onSubmit={saveDetails}>
                 <h2><span className="stepnum">1</span> Your details</h2>
                 <div className="form-grid" style={{ marginTop: 14 }}>
-                  <div className="field span2"><label>Amount to pay ({currency})</label>
-                    <input className="ti" type="number" step="0.01" min="0.5" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /></div>
+                  <div className="field span2"><label>Amount to pay ({currency}) — max {money(MAX_AMOUNT)}</label>
+                    <input className="ti" type="number" step="0.01" min="0.5" max={MAX_AMOUNT} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /></div>
                   <div className="field"><label>Full name</label><input className="ti" value={info.name} onChange={si('name')} placeholder="Jane Doe" /></div>
                   <div className="field"><label>Email</label><input className="ti" type="email" value={info.email} onChange={si('email')} placeholder="you@email.com" /></div>
-                  <div className="field"><label>WhatsApp number</label><input className="ti" value={info.whatsapp} onChange={si('whatsapp')} placeholder="+1 555 123 4567" /></div>
+                  <div className="field"><label>WhatsApp number</label><input className="ti" value={info.whatsapp} onChange={si('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} /></div>
                   <div className="field"><label>Phone (optional)</label><input className="ti" value={info.phone} onChange={si('phone')} placeholder="Alternate phone" /></div>
                   <div className="field span2"><label>Address line 1</label><input className="ti" value={info.address1} onChange={si('address1')} placeholder="123 Main St" /></div>
                   <div className="field span2"><label>Address line 2</label><input className="ti" value={info.address2} onChange={si('address2')} placeholder="Apt, suite (optional)" /></div>
@@ -430,12 +515,12 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                 <div className="opt-head">
                   <input type="radio" name="pay" readOnly checked={method === 'newcard'} />
                   <span className="nc-plus">+</span>
-                  <span><span className="opt-title">Add a new card</span><span className="opt-sub">Visa · Mastercard · RuPay · Amex — tokenized &amp; secure</span></span>
+                  <span><span className="opt-title">Add a new card</span><span className="opt-sub">Visa · Mastercard only — tokenized &amp; secure</span></span>
                   <span className="chev">▾</span>
                 </div>
                 <div className={`opt-body ${method === 'newcard' ? 'open' : ''}`} onClick={(e) => e.stopPropagation()}>
                   <div className="net-badges" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                    {['visa', 'mastercard', 'amex', 'rupay', 'discover'].map((n) => (
+                    {SUPPORTED_BRANDS.map((n) => (
                       <span key={n} className={`blogo ${BRAND_BADGE[n]} ${networks.includes(n) ? '' : 'off'}`}>{BRAND_TEXT[n]}</span>
                     ))}
                   </div>

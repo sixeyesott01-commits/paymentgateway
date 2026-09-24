@@ -31,6 +31,60 @@ function validateWhatsapp(country, raw) {
   const need = NSN_LEN[country];
   return need ? nsn.length === need : (nsn.length >= 6 && nsn.length <= 12);
 }
+
+// ---- Address autocomplete: Mapbox primary, Nominatim (OSM) fallback ----
+// Set NEXT_PUBLIC_MAPBOX_TOKEN in .env (publishable pk.* token). When unset,
+// autocomplete falls back to keyless Nominatim/OSM.
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+const ISO2 = { US: 'US', IN: 'IN', GB: 'GB', CA: 'CA', AU: 'AU', AE: 'AE', SG: 'SG' };
+
+async function geocodeMapbox(q, country) {
+  if (!MAPBOX_TOKEN) throw new Error('no mapbox token');
+  const cc = ISO2[country];
+  const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}` +
+    `&access_token=${MAPBOX_TOKEN}&autocomplete=true&limit=5&types=address${cc ? `&country=${cc}` : ''}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('mapbox');
+  const j = await r.json();
+  return (j.features || []).map((f) => {
+    const p = f.properties || {};
+    const c = p.context || {};
+    return {
+      label: p.full_address || p.name || '',
+      line1: p.name || '',
+      city: c.place?.name || c.locality?.name || '',
+      state: c.region?.name || '',
+      zip: c.postcode?.name || '',
+      country: (c.country?.country_code || '').toUpperCase(),
+    };
+  });
+}
+
+async function geocodeNominatim(q, country) {
+  const cc = ISO2[country];
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=5` +
+    `&q=${encodeURIComponent(q)}${cc ? `&countrycodes=${cc.toLowerCase()}` : ''}`;
+  const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+  if (!r.ok) throw new Error('nominatim');
+  const j = await r.json();
+  return (j || []).map((it) => {
+    const a = it.address || {};
+    const line1 = [a.house_number, a.road || a.pedestrian || a.neighbourhood].filter(Boolean).join(' ');
+    return {
+      label: it.display_name || '',
+      line1: line1 || it.name || '',
+      city: a.city || a.town || a.village || a.hamlet || a.suburb || '',
+      state: a.state || a.region || '',
+      zip: a.postcode || '',
+      country: (a.country_code || '').toUpperCase(),
+    };
+  });
+}
+
+async function geocode(q, country) {
+  try { const m = await geocodeMapbox(q, country); if (m.length) return m; } catch { /* fall through */ }
+  try { return await geocodeNominatim(q, country); } catch { return []; }
+}
 const BRAND_BADGE = { visa: 'visa', mastercard: 'mc', amex: 'amex', rupay: 'rupay', discover: 'discover', unknown: 'unk' };
 const BRAND_TEXT = { visa: 'VISA', mastercard: 'mastercard', amex: 'AMEX', rupay: 'RuPay', discover: 'DISC', unknown: 'CARD' };
 
@@ -110,6 +164,12 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const [addrOpen, setAddrOpen] = useState(false);
   const [toasts, setToasts] = useState([]);
   const toastId = useRef(0);
+  const [sug, setSug] = useState([]);
+  const [sugOpen, setSugOpen] = useState(false);
+  const [sugLoading, setSugLoading] = useState(false);
+  const sugTimer = useRef(null);
+  const blankVrf = { sent: false, verified: false, code: '', loading: false, msg: null };
+  const [vrf, setVrf] = useState({ email: { ...blankVrf }, whatsapp: { ...blankVrf } });
 
   const amt = Number(amount) || 0;
   const networks = acceptedNetworks(info.country);
@@ -184,6 +244,115 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   }, [view]);
 
   const si = (k) => (e) => setInfo((f) => ({ ...f, [k]: e.target.value }));
+  const setField = (k, v) => setInfo((f) => ({ ...f, [k]: v }));
+
+  // --- Hardcoded input guards: block wrong/over-long input at the source ---
+  function onAmount(e) {
+    let v = e.target.value.replace(/[^\d.]/g, '');
+    const parts = v.split('.');
+    if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
+    const [intp = '', decp] = v.split('.');
+    v = intp.slice(0, 4) + (v.includes('.') ? '.' + (decp || '').slice(0, 2) : '');
+    if (v !== '' && v !== '.' && Number(v) > MAX_AMOUNT) return; // never exceed cap
+    setAmount(v);
+  }
+  const onName = (e) => setField('name', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 60));
+  const resetVrf = (ch) => setVrf((v) => ({ ...v, [ch]: { ...blankVrf } }));
+  const onEmail = (e) => { setField('email', e.target.value.replace(/\s/g, '').slice(0, 254)); resetVrf('email'); };
+  // Digits only, single leading '+', capped to the country's max length.
+  const onPhoneLike = (k) => (e) => {
+    const cc = DIAL[info.country];
+    const maxDigits = cc ? cc.replace('+', '').length + (NSN_LEN[info.country] || 12) : 15;
+    const digits = e.target.value.replace(/\D/g, '').slice(0, maxDigits);
+    setField(k, digits ? '+' + digits : '');
+    if (k === 'whatsapp') resetVrf('whatsapp');
+  };
+
+  // --- OTP verification (email + WhatsApp) ---
+  const setVrfField = (ch, patch) => setVrf((v) => ({ ...v, [ch]: { ...v[ch], ...patch } }));
+  async function sendCode(ch) {
+    const target = ch === 'email' ? info.email : info.whatsapp;
+    if (ch === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) return toast('Enter a valid email first', 'error');
+    if (ch === 'whatsapp' && !validateWhatsapp(info.country, info.whatsapp)) return toast('Enter a valid WhatsApp number first', 'error');
+    setVrfField(ch, { loading: true, msg: null });
+    try {
+      const res = await fetch('/api/verify/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: ch, target }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send code');
+      setVrfField(ch, { sent: true, loading: false, msg: { type: 'success', t: 'Code sent — check your ' + (ch === 'email' ? 'inbox' : 'WhatsApp') } });
+      toast('Verification code sent');
+    } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); }
+  }
+  async function checkCode(ch) {
+    const target = ch === 'email' ? info.email : info.whatsapp;
+    const code = vrf[ch].code;
+    if (!/^\d{6}$/.test(code)) return setVrfField(ch, { msg: { type: 'error', t: 'Enter the 6-digit code' } });
+    setVrfField(ch, { loading: true, msg: null });
+    try {
+      const res = await fetch('/api/verify/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: ch, target, code }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Verification failed');
+      setVrfField(ch, { verified: true, loading: false, msg: null });
+      toast((ch === 'email' ? 'Email' : 'WhatsApp') + ' verified');
+    } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); }
+  }
+  function renderVerify(ch) {
+    const s = vrf[ch];
+    if (s.verified) return <div className="vrf-badge">✓ Verified</div>;
+    return (
+      <div className="vrf">
+        {!s.sent ? (
+          <button type="button" className="btn-secondary vrf-btn" disabled={s.loading} onClick={() => sendCode(ch)}>{s.loading ? 'Sending…' : 'Send code'}</button>
+        ) : (
+          <div className="vrf-row">
+            <input className="ti vrf-code" inputMode="numeric" maxLength={6} placeholder="6-digit code" value={s.code}
+              onChange={(e) => setVrfField(ch, { code: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
+            <button type="button" className="btn-secondary vrf-btn" disabled={s.loading} onClick={() => checkCode(ch)}>{s.loading ? 'Checking…' : 'Verify'}</button>
+            <button type="button" className="linklike vrf-resend" disabled={s.loading} onClick={() => sendCode(ch)}>Resend</button>
+          </div>
+        )}
+        {s.msg && <div className={`inline-msg ${s.msg.type}`} style={{ marginTop: 6 }}>{s.msg.t}</div>}
+      </div>
+    );
+  }
+  // Address type-ahead (Mapbox + Nominatim).
+  function onAddress1(e) {
+    const v = e.target.value.slice(0, 120);
+    setField('address1', v);
+    setSugOpen(true);
+    clearTimeout(sugTimer.current);
+    if (v.trim().length < 3) { setSug([]); setSugLoading(false); return; }
+    setSugLoading(true);
+    const country = info.country;
+    sugTimer.current = setTimeout(async () => {
+      const results = await geocode(v.trim(), country);
+      setSug(results); setSugLoading(false);
+    }, 350);
+  }
+  function pickAddress(s) {
+    setInfo((f) => ({
+      ...f,
+      address1: s.line1 || f.address1,
+      city: s.city || f.city,
+      state: s.state || f.state,
+      zip: (s.zip || f.zip).toUpperCase(),
+      country: COUNTRIES.includes(s.country) ? s.country : f.country,
+    }));
+    setSug([]); setSugOpen(false);
+    toast('Address filled');
+  }
+  const onCity = (e) => setField('city', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 58));
+  const onStateF = (e) => setField('state', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 58));
+  const onZip = (e) => setField('zip', e.target.value.replace(/[^A-Za-z0-9 -]/g, '').toUpperCase().slice(0, 10));
+  function onCountry(e) {
+    const country = e.target.value;
+    setInfo((f) => {
+      const next = { ...f, country };
+      if (!f.whatsapp || f.whatsapp === DIAL[f.country]) next.whatsapp = DIAL[country] || '';
+      return next;
+    });
+    resetVrf('whatsapp');
+  }
 
   function saveDetails(e) {
     e.preventDefault();
@@ -192,6 +361,9 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     if (amt > MAX_AMOUNT) return toast(`Amount cannot exceed ${money(MAX_AMOUNT)}`, 'error');
     if (!info.name || !info.email || !info.whatsapp) return toast('Fill name, email and WhatsApp', 'error');
     if (!validateWhatsapp(info.country, info.whatsapp)) return toast(`Enter a valid WhatsApp number for ${info.country} (starts with ${DIAL[info.country] || '+ country code'})`, 'error');
+    if (!info.address1 || !info.city || !info.state || !info.zip) return toast('Complete your billing address (line 1, city, state, ZIP)', 'error');
+    if (!vrf.email.verified) return toast('Verify your email (send & enter the code)', 'error');
+    if (!vrf.whatsapp.verified) return toast('Verify your WhatsApp number (send & enter the code)', 'error');
     setDetailsDone(true);
     setStep(1);
     toast('Details saved');
@@ -444,18 +616,32 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                 <h2><span className="stepnum">1</span> Your details</h2>
                 <div className="form-grid" style={{ marginTop: 14 }}>
                   <div className="field span2"><label>Amount to pay ({currency}) — max {money(MAX_AMOUNT)}</label>
-                    <input className="ti" type="number" step="0.01" min="0.5" max={MAX_AMOUNT} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /></div>
-                  <div className="field"><label>Full name</label><input className="ti" value={info.name} onChange={si('name')} placeholder="Jane Doe" /></div>
-                  <div className="field"><label>Email</label><input className="ti" type="email" value={info.email} onChange={si('email')} placeholder="you@email.com" /></div>
-                  <div className="field"><label>WhatsApp number</label><input className="ti" value={info.whatsapp} onChange={si('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} /></div>
-                  <div className="field"><label>Phone (optional)</label><input className="ti" value={info.phone} onChange={si('phone')} placeholder="Alternate phone" /></div>
-                  <div className="field span2"><label>Address line 1</label><input className="ti" value={info.address1} onChange={si('address1')} placeholder="123 Main St" /></div>
-                  <div className="field span2"><label>Address line 2</label><input className="ti" value={info.address2} onChange={si('address2')} placeholder="Apt, suite (optional)" /></div>
-                  <div className="field"><label>City</label><input className="ti" value={info.city} onChange={si('city')} /></div>
-                  <div className="field"><label>State / Region</label><input className="ti" value={info.state} onChange={si('state')} /></div>
-                  <div className="field"><label>ZIP / Postal code</label><input className="ti" value={info.zip} onChange={si('zip')} placeholder="10001" /></div>
+                    <input className="ti" type="text" inputMode="decimal" maxLength={7} value={amount} onChange={onAmount} placeholder="0.00" /></div>
+                  <div className="field"><label>Full name</label><input className="ti" maxLength={60} value={info.name} onChange={onName} placeholder="Jane Doe" /></div>
+                  <div className="field"><label>Email</label><input className="ti" type="email" maxLength={254} value={info.email} onChange={onEmail} placeholder="you@email.com" />{renderVerify('email')}</div>
+                  <div className="field"><label>WhatsApp number</label><input className="ti" type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />{renderVerify('whatsapp')}</div>
+                  <div className="field"><label>Phone (optional)</label><input className="ti" type="tel" maxLength={16} value={info.phone} onChange={onPhoneLike('phone')} placeholder="Alternate phone" /></div>
+                  <div className="field span2" style={{ position: 'relative' }}><label>Address line 1</label>
+                    <input className="ti" maxLength={120} value={info.address1} onChange={onAddress1} autoComplete="off"
+                      onFocus={() => info.address1.trim().length >= 3 && setSugOpen(true)}
+                      onBlur={() => setTimeout(() => setSugOpen(false), 150)}
+                      placeholder="Start typing your address…" />
+                    {sugOpen && (sugLoading || sug.length > 0) && (
+                      <div className="addr-sug">
+                        {sugLoading && <div className="addr-sug-load">Searching…</div>}
+                        {sug.map((s, i) => (
+                          <button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickAddress(s)}>{s.label}</button>
+                        ))}
+                        {!sugLoading && sug.length === 0 && <div className="addr-sug-load">No matches</div>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="field span2"><label>Address line 2</label><input className="ti" maxLength={120} value={info.address2} onChange={si('address2')} placeholder="Apt, suite (optional)" /></div>
+                  <div className="field"><label>City</label><input className="ti" maxLength={58} value={info.city} onChange={onCity} /></div>
+                  <div className="field"><label>State / Region</label><input className="ti" maxLength={58} value={info.state} onChange={onStateF} /></div>
+                  <div className="field"><label>ZIP / Postal code</label><input className="ti" maxLength={10} value={info.zip} onChange={onZip} placeholder="10001" /></div>
                   <div className="field"><label>Country</label>
-                    <select className="ti" value={info.country} onChange={si('country')}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
+                    <select className="ti" value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
                 </div>
                 <button className="btn-primary sm" type="submit" style={{ marginTop: 14 }}>Save &amp; continue</button>
               </form>

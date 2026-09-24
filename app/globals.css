@@ -182,6 +182,21 @@ input[type=checkbox]{accent-color:var(--teal);width:15px;height:15px;cursor:poin
 .e-apr{font-size:12px;font-weight:700;color:var(--green)}
 .emi-fine{font-size:11.5px;color:var(--ink3);margin-top:8px}
 
+/* OTP verify controls */
+.vrf{margin-top:8px}
+.vrf-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.vrf-code{width:130px!important;letter-spacing:3px;text-align:center}
+.vrf-btn{padding:8px 14px;white-space:nowrap}
+.vrf-resend{font-size:12.5px}
+.vrf-badge{margin-top:8px;display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--green);background:#EDF7F2;border:1px solid #B7DFCF;padding:5px 12px;border-radius:999px}
+
+/* address autocomplete dropdown */
+.addr-sug{position:absolute;left:0;right:0;top:100%;z-index:40;margin-top:4px;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(15,17,17,.12);overflow:hidden;max-height:260px;overflow-y:auto}
+.addr-sug-item{display:block;width:100%;text-align:left;padding:10px 14px;font-size:13px;color:var(--ink);background:#fff;border:none;border-bottom:1px solid #F1F3F3;cursor:pointer}
+.addr-sug-item:last-child{border-bottom:none}
+.addr-sug-item:hover{background:#F0F9FA}
+.addr-sug-load{padding:10px 14px;font-size:12.5px;color:var(--ink3)}
+
 /* wizard step nav */
 .wiz-nav{display:flex;justify-content:space-between;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid #EEF1F1}
 .wiz-nav .btn-primary{margin-left:auto}

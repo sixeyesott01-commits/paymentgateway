@@ -45,7 +45,19 @@ const STATES = {
 };
 const statesFor = (country) => STATES[country] || null;
 
-// City type-ahead (Mapbox place search, Nominatim fallback).
+// City type-ahead (Radar primary, Mapbox + Nominatim fallback).
+async function geocodeCityRadar(q, country) {
+  if (!RADAR_KEY) throw new Error('no radar key');
+  const cc = ISO2[country];
+  const url = `https://api.radar.io/v1/search/autocomplete?query=${encodeURIComponent(q)}&limit=6&layers=locality${cc ? `&countryCode=${cc}` : ''}`;
+  const r = await fetch(url, { headers: { Authorization: RADAR_KEY } });
+  if (!r.ok) throw new Error('radar');
+  const j = await r.json();
+  return (j.addresses || []).map((a) => {
+    const city = a.city || a.addressLabel || '';
+    return { city, state: a.state || '', label: a.formattedAddress || city };
+  }).filter((x) => x.city);
+}
 async function geocodeCityMapbox(q, country) {
   if (!MAPBOX_TOKEN) throw new Error('no mapbox token');
   const cc = ISO2[country];
@@ -74,6 +86,7 @@ async function geocodeCityNominatim(q, country) {
   }).filter((x) => x.city);
 }
 async function geocodeCity(q, country) {
+  try { const m = await geocodeCityRadar(q, country); if (m.length) return m; } catch { /* fall through */ }
   try { const m = await geocodeCityMapbox(q, country); if (m.length) return m; } catch { /* fall through */ }
   try { return await geocodeCityNominatim(q, country); } catch { return []; }
 }
@@ -100,11 +113,55 @@ function validateZip(country, zip) {
   return r.re.test(z);
 }
 
-// ---- Address autocomplete: Mapbox primary, Nominatim (OSM) fallback ----
-// Set NEXT_PUBLIC_MAPBOX_TOKEN in .env (publishable pk.* token). When unset,
-// autocomplete falls back to keyless Nominatim/OSM.
+// ---- Address autocomplete: Radar primary, Mapbox, then Nominatim (OSM) ----
+// Set NEXT_PUBLIC_RADAR_KEY (prj_live_pk_* / prj_test_pk_*) and/or
+// NEXT_PUBLIC_MAPBOX_TOKEN (pk.*). When both unset, falls back to keyless OSM.
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
+const RADAR_KEY = process.env.NEXT_PUBLIC_RADAR_KEY || '';
 const ISO2 = { US: 'US', IN: 'IN', GB: 'GB', CA: 'CA', AU: 'AU', AE: 'AE', SG: 'SG' };
+
+async function geocodeRadar(q, country) {
+  if (!RADAR_KEY) throw new Error('no radar key');
+  const cc = ISO2[country];
+  const url = `https://api.radar.io/v1/search/autocomplete?query=${encodeURIComponent(q)}&limit=5&layers=address${cc ? `&countryCode=${cc}` : ''}`;
+  const r = await fetch(url, { headers: { Authorization: RADAR_KEY } });
+  if (!r.ok) throw new Error('radar');
+  const j = await r.json();
+  return (j.addresses || []).map((a) => ({
+    label: a.formattedAddress || a.addressLabel || '',
+    line1: a.addressLabel || [a.number, a.street].filter(Boolean).join(' ') || '',
+    city: a.city || '',
+    state: a.state || '',
+    zip: a.postalCode || '',
+    country: (a.countryCode || '').toUpperCase(),
+  })).filter((x) => x.label);
+}
+
+// ZIP -> city/state (free, keyless). Zippopotam covers many countries;
+// postalpincode.in handles India. Best-effort: returns null on miss.
+const ZIPPO_CC = { US: 'us', GB: 'gb', CA: 'ca', AU: 'au', SG: 'sg', DE: 'de', FR: 'fr', ES: 'es', IT: 'it', NL: 'nl' };
+async function zipLookup(country, zip) {
+  const z = String(zip || '').trim().toUpperCase();
+  if (!z) return null;
+  try {
+    if (country === 'IN') {
+      const pin = z.replace(/\D/g, '').slice(0, 6);
+      if (pin.length !== 6) return null;
+      const r = await fetch(`https://api.postalpincode.in/pincode/${pin}`);
+      const j = await r.json();
+      const po = j?.[0]?.PostOffice?.[0];
+      return po ? { city: po.District || po.Block || '', state: po.State || '' } : null;
+    }
+    const cc = ZIPPO_CC[country];
+    if (!cc) return null;
+    const q = country === 'US' ? z.split('-')[0] : z;
+    const r = await fetch(`https://api.zippopotam.us/${cc}/${encodeURIComponent(q)}`);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const p = j?.places?.[0];
+    return p ? { city: p['place name'] || '', state: p['state'] || '' } : null;
+  } catch { return null; }
+}
 
 async function geocodeMapbox(q, country) {
   if (!MAPBOX_TOKEN) throw new Error('no mapbox token');
@@ -150,6 +207,7 @@ async function geocodeNominatim(q, country) {
 }
 
 async function geocode(q, country) {
+  try { const m = await geocodeRadar(q, country); if (m.length) return m; } catch { /* fall through */ }
   try { const m = await geocodeMapbox(q, country); if (m.length) return m; } catch { /* fall through */ }
   try { return await geocodeNominatim(q, country); } catch { return []; }
 }
@@ -244,15 +302,30 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const [cityLoading, setCityLoading] = useState(false);
   const [cityOk, setCityOk] = useState(false);
   const cityTimer = useRef(null);
+  const zipTimer = useRef(null);
 
   const amt = Number(amount) || 0;
   const networks = acceptedNetworks(info.country);
   const walletList = walletsFor(info.country);
 
+  const toastTimers = useRef({});
   function toast(msg, type = 'ok') {
-    const id = ++toastId.current;
-    setToasts((t) => [...t, { id, msg, type }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2600);
+    const arm = (id) => {
+      clearTimeout(toastTimers.current[id]);
+      toastTimers.current[id] = setTimeout(() => {
+        setToasts((t) => t.filter((x) => x.id !== id));
+        delete toastTimers.current[id];
+      }, 2600);
+    };
+    setToasts((t) => {
+      // Dedupe: same message already showing -> refresh it, don't stack.
+      const dup = t.find((x) => x.msg === msg && x.type === type);
+      if (dup) { arm(dup.id); return t; }
+      const id = ++toastId.current;
+      arm(id);
+      // Cap at 3 visible so rapid clicks can't flood the UI.
+      return [...t, { id, msg, type }].slice(-3);
+    });
   }
 
   // Central error feedback: shake the field, buzz (mobile haptics), show the
@@ -384,7 +457,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
       toast((ch === 'email' ? 'Email' : 'WhatsApp') + ' verified');
     } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
-  // Address type-ahead (Mapbox + Nominatim).
+  // Address type-ahead (Radar -> Mapbox -> Nominatim).
   function onAddress1(e) {
     const v = e.target.value.slice(0, 120);
     setField('address1', v);
@@ -436,7 +509,27 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   }
   const onStateF = (e) => setField('state', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 58));
   const onStateSelect = (e) => setField('state', e.target.value);
-  const onZip = (e) => setField('zip', zipRule(info.country).sanitize(e.target.value));
+  function onZip(e) {
+    const country = info.country;
+    const v = zipRule(country).sanitize(e.target.value);
+    setField('zip', v);
+    clearTimeout(zipTimer.current);
+    if (!v.trim() || !validateZip(country, v)) return;
+    // ZIP -> city/state autofill (free lookup). Only fills empty fields.
+    zipTimer.current = setTimeout(async () => {
+      const res = await zipLookup(country, v);
+      if (!res || (!res.city && !res.state)) return;
+      const sl = statesFor(country);
+      setInfo((f) => {
+        if (f.zip !== v) return f; // ZIP changed mid-fetch -> ignore
+        const next = { ...f };
+        if (!f.city && res.city) next.city = res.city;
+        if (!f.state && res.state) next.state = sl ? (sl.includes(res.state) ? res.state : f.state) : res.state;
+        return next;
+      });
+      if (res.city) setCityOk(true);
+    }, 400);
+  }
   function onCountry(e) {
     const country = e.target.value;
     setInfo((f) => {

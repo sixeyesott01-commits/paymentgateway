@@ -2,8 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { acceptedNetworks, wallets as walletsFor, detectBrand, NETWORK_LABEL } from '@/lib/payment-methods';
-import SiteHeader from '@/app/components/SiteHeader';
-import SiteFooter from '@/app/components/SiteFooter';
 
 const COUNTRIES = ['US', 'IN', 'GB', 'CA', 'AU', 'AE', 'SG', 'Other'];
 const BANKS = ['HDFC Bank', 'ICICI Bank', 'State Bank of India', 'Axis Bank', 'Kotak Mahindra Bank', 'Citibank', 'Chase', 'Bank of America', 'Barclays', 'HSBC'];
@@ -386,25 +384,6 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
       toast((ch === 'email' ? 'Email' : 'WhatsApp') + ' verified');
     } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
-  function renderVerify(ch) {
-    const s = vrf[ch];
-    if (s.verified) return <div className="vrf-badge">✓ Verified</div>;
-    return (
-      <div className="vrf">
-        {!s.sent ? (
-          <button type="button" className="btn-secondary vrf-btn" disabled={s.loading} onClick={() => sendCode(ch)}>{s.loading ? 'Sending…' : 'Send code'}</button>
-        ) : (
-          <div className="vrf-row">
-            <input className="ti vrf-code" inputMode="numeric" maxLength={6} placeholder="6-digit code" value={s.code}
-              onChange={(e) => setVrfField(ch, { code: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
-            <button type="button" className="btn-secondary vrf-btn" disabled={s.loading} onClick={() => checkCode(ch)}>{s.loading ? 'Checking…' : 'Verify'}</button>
-            <button type="button" className="linklike vrf-resend" disabled={s.loading} onClick={() => sendCode(ch)}>Resend</button>
-          </div>
-        )}
-        {s.msg && <div className={`inline-msg ${s.msg.type}`} style={{ marginTop: 6 }}>{s.msg.t}</div>}
-      </div>
-    );
-  }
   // Address type-ahead (Mapbox + Nominatim).
   function onAddress1(e) {
     const v = e.target.value.slice(0, 120);
@@ -652,53 +631,104 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     fx: { t: 'About currency', b: `Your card is charged in ${currency}. If your card is in another currency, your bank converts at its prevailing rate plus any conversion charge.` },
   };
 
+  // Shared header / footer for the redesigned (pux) checkout.
+  const puxHeader = (
+    <header className="site-header">
+      <div className="header-inner">
+        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+          <div className="brand" aria-label="payUnexa"><span className="pay">pay</span><span className="unexa">Unexa</span></div>
+          <div className="secure-header">
+            <div className="lock" aria-hidden="true">🔒</div>
+            <div><div className="secure-title">Secure checkout</div><div className="secure-subtitle">Your payment information is protected</div></div>
+          </div>
+        </div>
+        <div className="help">Need help? &nbsp;<a href="/contact">Contact us</a></div>
+      </div>
+    </header>
+  );
+  const puxFooter = (
+    <footer className="footer">
+      <div className="links">
+        <a href="/conditions-of-use">Terms of Service</a><span>·</span>
+        <a href="/privacy">Privacy Policy</a><span>·</span>
+        <a href="/refund-policy">Refund &amp; Cancellation Policy</a><span>·</span>
+        <a href="/security">Security</a><span>·</span>
+        <a href="/help">Help</a><span>·</span>
+        <a href="/contact">Contact</a>
+      </div>
+      <div>© {new Date().getFullYear()} payUnexa Technologies. All rights reserved.</div>
+    </footer>
+  );
+  const toastWrap = <div className="toast-wrap">{toasts.map((t) => <div key={t.id} className={`toast show ${t.type === 'error' ? 'error' : ''}`}>{t.msg}</div>)}</div>;
+
   /* ================= SUCCESS SCREEN ================= */
   if (view === 'success') {
     const emailMask = info.email.replace(/^(.{2}).*(@.*)$/, '$1••••$2');
     return (
-      <>
-        <SiteHeader title="Order confirmed"  />
-        <section className="success-screen">
-          <div className="succ-card">
-            <div className="succ-anim">
-              <svg viewBox="0 0 52 52"><circle className="sc" cx="26" cy="26" r="24" /><path className="sp" d="M15 27l7.5 7.5L38 19" /></svg>
-            </div>
-            <h2>Payment successful, thank you!</h2>
-            <p className="succ-sub">Confirmation sent to <b>{emailMask}</b></p>
-            <div className="succ-grid">
-              <div>
-                <div className="sg-lbl">Reference</div>
-                <div className="sg-val">{reference || '—'} <button className="linklike" style={{ fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(reference); toast('Reference copied'); }}>Copy</button></div>
-                <div className="sg-lbl">Amount paid</div>
-                <div className="sg-val">{money(total)}</div>
-                <div className="sg-lbl">Paid using</div>
-                <div className="sg-val">{methodLabel()}</div>
+      <div className="pux">
+        {puxHeader}
+        <main className="page">
+          <section className="success-screen">
+            <div className="card succ-card">
+              <div className="succ-anim">
+                <svg viewBox="0 0 52 52"><circle className="sc" cx="26" cy="26" r="24" /><path className="sp" d="M15 27l7.5 7.5L38 19" /></svg>
               </div>
-              <div>
-                <div className="sg-lbl">Billed to</div>
-                <div className="sg-val">{info.name}</div>
-                <div className="sg-lbl">Contact</div>
-                <div className="sg-val">{info.email}</div>
+              <h2>Payment successful, thank you!</h2>
+              <p className="succ-sub">Confirmation sent to <b>{emailMask}</b></p>
+              <div className="succ-grid">
+                <div>
+                  <div className="sg-lbl">Reference</div>
+                  <div className="sg-val">{reference || '—'} <button className="linklike" style={{ fontSize: 12 }} onClick={() => { navigator.clipboard?.writeText(reference); toast('Reference copied'); }}>Copy</button></div>
+                  <div className="sg-lbl">Amount paid</div>
+                  <div className="sg-val">{money(total)}</div>
+                  <div className="sg-lbl">Paid using</div>
+                  <div className="sg-val">{methodLabel()}</div>
+                </div>
+                <div>
+                  <div className="sg-lbl">Billed to</div>
+                  <div className="sg-val">{info.name}</div>
+                  <div className="sg-lbl">Contact</div>
+                  <div className="sg-val">{info.email}</div>
+                </div>
               </div>
+              <div className="succ-actions">
+                <button className="primary" style={{ maxWidth: 240 }} onClick={downloadInvoice}>Download invoice (PDF)</button>
+                <button className="btn-secondary" onClick={() => { window.location.href = HOME_URL; }}>Go to payUnexa.com</button>
+              </div>
+              <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to payUnexa.com in a few seconds…</p>
             </div>
-            <div className="succ-actions">
-              <button className="btn-primary" onClick={downloadInvoice}>Download invoice (PDF)</button>
-              <button className="btn-secondary" onClick={() => { window.location.href = HOME_URL; }}>Go to payUnexa.com</button>
-            </div>
-            <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to payUnexa.com in a few seconds…</p>
-          </div>
-        </section>
-        <SiteFooter />
-      </>
+          </section>
+          {puxFooter}
+        </main>
+        {toastWrap}
+      </div>
     );
   }
 
   const stepIdx = step;
-  const Step = ({ i, label }) => (
-    <div className={`step ${i === stepIdx ? 'active' : ''} ${i < stepIdx ? 'done' : ''}`}>
-      <span className="dot">{i < stepIdx ? '✓' : i + 1}</span><span>{label}</span>
-    </div>
-  );
+  function verifyRight(ch) {
+    const s = vrf[ch];
+    if (s.verified) return null;
+    if (!s.sent) return <button type="button" className="verify-btn" disabled={s.loading} onClick={() => sendCode(ch)}>{s.loading ? 'Sending…' : '✈ Send code'}</button>;
+    return (
+      <>
+        <input className="ti vrf-code" inputMode="numeric" maxLength={6} placeholder="6-digit code" value={s.code}
+          onChange={(e) => setVrfField(ch, { code: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
+        <button type="button" className="verify-btn" style={{ minWidth: 108 }} disabled={s.loading} onClick={() => checkCode(ch)}>{s.loading ? 'Checking…' : 'Verify'}</button>
+      </>
+    );
+  }
+  function verifyBelow(ch, help) {
+    const s = vrf[ch];
+    if (s.verified) return <div className="verified">✓ {ch === 'email' ? 'Email' : 'WhatsApp'} verified</div>;
+    return (
+      <>
+        <div className="field-help">ⓘ {help}</div>
+        {s.sent && <button type="button" className="linklike" style={{ fontSize: 12, marginTop: 4 }} disabled={s.loading} onClick={() => sendCode(ch)}>Resend code</button>}
+        {s.msg && <div className={`inline-msg ${s.msg.type}`} style={{ marginTop: 6 }}>{s.msg.t}</div>}
+      </>
+    );
+  }
 
   const PayOpt = ({ mkey, ico, title, sub, tags, children }) => (
     <div className={`payopt ${method === mkey ? 'selected' : ''}`} onClick={() => setMethod(mkey)}>
@@ -713,259 +743,328 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     </div>
   );
 
+  const steps = [
+    { name: 'Details', desc: 'Enter your information' },
+    { name: 'Payment', desc: 'Choose payment method' },
+    { name: 'Confirmation', desc: 'Complete your payment' },
+  ];
+
   /* ================= CHECKOUT ================= */
   return (
-    <>
-      <SiteHeader title="Checkout"  />
+    <div className="pux">
+      {puxHeader}
+      <main className="page">
+        <nav className="stepper" aria-label="Checkout progress">
+          {steps.map((s, i) => (
+            <div key={i} className={`step ${i === stepIdx ? 'active' : ''} ${i < stepIdx ? 'done' : ''}`}>
+              <div className="step-dot">{i < stepIdx ? '✓' : i + 1}</div>
+              <div className="step-copy"><div className="step-name">{s.name}</div><div className="step-description">{s.desc}</div></div>
+            </div>
+          ))}
+        </nav>
 
-      <div className="steps">
-        <Step i={0} label="Your details" />
-        <div className="sep" />
-        <Step i={1} label="Payment method" />
-        <div className="sep" />
-        <Step i={2} label="Review & pay" />
-      </div>
-
-      <div className="grid">
-        <div className="col-main">
-          {/* ---------- 1. DETAILS ---------- */}
-          {step === 0 && (
-          <div className="card">
+        <div className="grid">
+          <section className="card main-card">
+            {/* ---------- STEP 1: DETAILS ---------- */}
+            {step === 0 && (
               <form onSubmit={saveDetails}>
-                <h2><span className="stepnum">1</span> Your details</h2>
-                <div className="form-grid" style={{ marginTop: 14 }}>
-                  <div className="field span2"><label>Amount to pay ({currency}) — {money(MIN_AMOUNT)} to {money(MAX_AMOUNT)}</label>
-                    <input className={cls('amount')} type="text" inputMode="decimal" maxLength={7} value={amount} onChange={onAmount} placeholder="0.00" /></div>
-                  <div className="field"><label>Full name</label><input className={cls('name')} maxLength={60} value={info.name} onChange={onName} placeholder="Jane Doe" /></div>
-                  <div className="field"><label>Email</label><input className={cls('email')} type="email" maxLength={254} value={info.email} onChange={onEmail} placeholder="you@email.com" />{renderVerify('email')}</div>
-                  <div className="field"><label>WhatsApp number</label><input className={cls('whatsapp')} type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />{renderVerify('whatsapp')}</div>
-                  <div className="field"><label>Phone (optional)</label><input className="ti" type="tel" maxLength={16} value={info.phone} onChange={onPhoneLike('phone')} placeholder="Alternate phone" /></div>
-                  <div className="field span2" style={{ position: 'relative' }}><label>Address line 1</label>
-                    <input className={cls('address1')} maxLength={120} value={info.address1} onChange={onAddress1} autoComplete="off"
-                      onFocus={() => info.address1.trim().length >= 3 && setSugOpen(true)}
-                      onBlur={() => setTimeout(() => setSugOpen(false), 150)}
-                      placeholder="Start typing your address…" />
-                    {sugOpen && (sugLoading || sug.length > 0) && (
-                      <div className="addr-sug">
-                        {sugLoading && <div className="addr-sug-load">Searching…</div>}
-                        {sug.map((s, i) => (
-                          <button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickAddress(s)}>{s.label}</button>
-                        ))}
-                        {!sugLoading && sug.length === 0 && <div className="addr-sug-load">No matches</div>}
-                      </div>
-                    )}
+                <div className="section">
+                  <div className="section-heading">
+                    <div className="icon-box">👤</div>
+                    <div><h1>Customer information</h1><p>Enter your information to continue with your payment.</p></div>
                   </div>
-                  <div className="field span2"><label>Address line 2</label><input className="ti" maxLength={120} value={info.address2} onChange={si('address2')} placeholder="Apt, suite (optional)" /></div>
-                  <div className="field" style={{ position: 'relative' }}><label>City</label>
-                    <input className={cls('city')} maxLength={58} value={info.city} onChange={onCity} autoComplete="off"
-                      onFocus={() => info.city.trim().length >= 2 && setCityOpen(true)}
-                      onBlur={() => setTimeout(() => setCityOpen(false), 150)}
-                      placeholder="Start typing your city…" />
-                    {cityOpen && (cityLoading || citySug.length > 0) && (
-                      <div className="addr-sug">
-                        {cityLoading && <div className="addr-sug-load">Searching…</div>}
-                        {citySug.map((s, i) => (
-                          <button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickCity(s)}>{s.label}</button>
-                        ))}
-                        {!cityLoading && citySug.length === 0 && <div className="addr-sug-load">No matches</div>}
-                      </div>
-                    )}
-                  </div>
-                  <div className="field"><label>State / Region</label>
-                    {statesFor(info.country) ? (
-                      <select className={cls('state')} value={info.state} onChange={onStateSelect}>
-                        <option value="">Select state / region</option>
-                        {statesFor(info.country).map((s) => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    ) : (
-                      <input className={cls('state')} maxLength={58} value={info.state} onChange={onStateF} placeholder="State / Region" />
-                    )}
-                  </div>
-                  <div className="field"><label>ZIP / Postal code</label><input className={cls('zip')} maxLength={zipRule(info.country).max} value={info.zip} onChange={onZip} placeholder={zipRule(info.country).ph} /></div>
-                  <div className="field"><label>Country</label>
-                    <select className="ti" value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
-                </div>
-                <button className="btn-primary sm" type="submit" style={{ marginTop: 14 }}>Save &amp; continue</button>
-              </form>
-          </div>
-          )}
 
-          {/* ---------- 2. PAYMENT METHOD ---------- */}
-          {step === 1 && (
-          <div className="card">
-            <div className="addr-flex">
-              <h2><span className="stepnum">2</span> Payment method</h2>
-              <span className="muted" style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#067D62" strokeWidth="2"><path d="M12 3l7 3v5c0 4.6-3 8.1-7 9.2C8 19.1 5 15.6 5 11V6z" /></svg>
-                Powered by <b>payUnexa</b>
-              </span>
-            </div>
-
-            {/* gift / promo */}
-            <div className="gift-box">
-              <div className="gift-head">Gift card / promo</div>
-              <div className="gift-sub">Enter a gift card, voucher or promotional code</div>
-              <div className="gift-row">
-                <span className="plus">+</span>
-                <input className="ti" maxLength={25} placeholder="Enter code (try SAVE10)" value={giftInput}
-                  onChange={(e) => setGiftInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyGift(); } }} />
-                <button className="btn-secondary" type="button" onClick={applyGift}>Apply</button>
-              </div>
-              {giftErr && <div className="inline-msg error">{giftErr}</div>}
-              {gift && <div className="inline-msg success"><b>{gift.kind} “{gift.code}”</b> applied — {gift.type === 'flat' ? `${money(discount)} off` : `10% off — you saved ${money(discount)}`} <button className="linklike" style={{ marginLeft: 6 }} onClick={() => { setGift(null); setGiftErr(''); }}>Remove</button></div>}
-            </div>
-
-            {/* pay-later banner */}
-            <div className="pl-banner" role="button" tabIndex={0} onClick={() => setMethod('emi')}>
-              <div className="pl-text"><b>{info.name || 'You'}</b>, pay 4 interest-free payments of <b>{money(round2(total / 4))}</b> with <b>payUnexa Pay Later</b>. Subject to eligibility. <span className="pl-link">Learn more</span></div>
-              <div className="pl-div" />
-              <div className="pl-apr"><b>0% APR</b><span>No interest. Ever.</span></div>
-            </div>
-
-            {/* saved + new cards */}
-            <div className="pmt-group">
-              <div className="pmt-group-title">Cards</div>
-              {savedCards.map((c) => (
-                <div key={c.key} className={`payopt saved-card ${method === c.key ? 'selected' : ''}`} onClick={() => setMethod(c.key)}>
-                  <input type="radio" name="pay" readOnly checked={method === c.key} />
-                  <div><span className={`blogo ${BRAND_BADGE[c.brand]}`}>{BRAND_TEXT[c.brand]}</span></div>
-                  <div><div className="c-title">{c.bank}</div><div className="c-sub">•••• {c.last4}{c.isNew ? ' · tokenized' : ''}</div></div>
-                  <div className="c-name">{c.name}</div>
-                  <div className="c-exp">{c.exp}</div>
-                  <div className="c-cvv" onClick={(e) => e.stopPropagation()}>
-                    {c.isNew ? <span className="cvv-ok">CVV verified</span> :
-                      <input className="ti cvv-input" placeholder="CVV" maxLength={4} inputMode="numeric" value={cvv[c.key] || ''}
-                        onChange={(e) => setCvv((v) => ({ ...v, [c.key]: e.target.value.replace(/\D/g, '').slice(0, 4) }))} />}
+                  <div className="amount-panel">
+                    <div className="amount-icon">$</div>
+                    <div><div className="amount-title">Payment amount</div><div className="amount-note">You will be charged in {currency}</div></div>
+                    <div className="amount-value">{money(amt)} {currency}</div>
+                    <div className="secure-pill">🔒 Secure payment</div>
                   </div>
-                </div>
-              ))}
-              <div className={`payopt ${method === 'newcard' ? 'selected' : ''}`} onClick={() => setMethod('newcard')}>
-                <div className="opt-head">
-                  <input type="radio" name="pay" readOnly checked={method === 'newcard'} />
-                  <span className="nc-plus">+</span>
-                  <span><span className="opt-title">Add a new card</span><span className="opt-sub">Visa · Mastercard only — tokenized &amp; secure</span></span>
-                  <span className="chev">▾</span>
-                </div>
-                <div className={`opt-body ${method === 'newcard' ? 'open' : ''}`} onClick={(e) => e.stopPropagation()}>
-                  <div className="net-badges" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                    {SUPPORTED_BRANDS.map((n) => (
-                      <span key={n} className={`blogo ${BRAND_BADGE[n]} ${networks.includes(n) ? '' : 'off'}`}>{BRAND_TEXT[n]}</span>
-                    ))}
-                  </div>
+
                   <div className="form-grid">
-                    <div className="field span2"><label>Card number</label>
-                      <div className="num-wrap">
-                        <input className="ti" inputMode="numeric" autoComplete="cc-number" placeholder="1234 5678 9012 3456" value={nc.number}
-                          onChange={(e) => setNc({ ...nc, number: fmtCard(e.target.value, detectBrand(e.target.value.replace(/\D/g, ''))) })} />
-                        <span className={`blogo ${BRAND_BADGE[detectBrand(nc.number.replace(/\D/g, ''))]}`}>{BRAND_TEXT[detectBrand(nc.number.replace(/\D/g, ''))]}</span>
+                    <div className="field full"><label className="required">Amount to pay ({currency}) — {money(MIN_AMOUNT)} to {money(MAX_AMOUNT)}</label>
+                      <input className={cls('amount')} type="text" inputMode="decimal" maxLength={7} value={amount} onChange={onAmount} placeholder="0.00" /></div>
+
+                    <div className="field full"><label className="required">Full name</label>
+                      <input className={cls('name')} maxLength={60} value={info.name} onChange={onName} placeholder="Jane Doe" /></div>
+
+                    <div className="field full"><label className="required">Email address</label>
+                      <div className="input-row">
+                        <input className={cls('email')} type="email" maxLength={254} value={info.email} onChange={onEmail} placeholder="you@example.com" />
+                        {verifyRight('email')}
+                      </div>
+                      {verifyBelow('email', "We'll send a verification code to your email.")}
+                    </div>
+
+                    <div className="field full">
+                      <div className="whatsapp-row">
+                        <div>
+                          <label className="required">WhatsApp number</label>
+                          <div className="input-row">
+                            <div className="phone-input">
+                              <span className="country-code">{info.country} {DIAL[info.country] || ''} ▾</span>
+                              <input className={cls('whatsapp')} type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />
+                            </div>
+                            {verifyRight('whatsapp')}
+                          </div>
+                          {verifyBelow('whatsapp', 'Used for payment notifications and verification.')}
+                        </div>
+                        <div>
+                          <label>Phone number <span className="optional">(optional)</span></label>
+                          <div className="phone-input">
+                            <span className="country-code">☎</span>
+                            <input type="tel" maxLength={16} value={info.phone} onChange={onPhoneLike('phone')} placeholder="Alternate phone number" />
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div className="field span2"><label>Name on card</label><input className="ti" autoComplete="cc-name" placeholder="Name as printed on card" value={nc.holder} onChange={(e) => setNc({ ...nc, holder: e.target.value })} /></div>
-                    <div className="field"><label>Expiry (MM/YY)</label><input className="ti" inputMode="numeric" autoComplete="cc-exp" placeholder="MM/YY" value={nc.exp} onChange={(e) => setNc({ ...nc, exp: fmtExp(e.target.value) })} /></div>
-                    <div className="field"><label>CVV <button className="linklike" type="button" style={{ fontSize: 11.5 }} onClick={() => setInfoModal(INFO.cvv)}>What&apos;s this?</button></label>
-                      <input className="ti" maxLength={4} inputMode="numeric" placeholder="•••" value={nc.cvc} onChange={(e) => setNc({ ...nc, cvc: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></div>
-                  </div>
-                  <button className="btn-primary sm" type="button" onClick={addNewCard} style={{ marginTop: 12 }}>Add your card</button>
-                  {ncErr && <div className="inline-msg error">{ncErr}</div>}
-                  <div className="secure-note">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
-                    Encrypted end-to-end. payUnexa is PCI-DSS Level 1 certified — your full card number and CVV never leave your browser.
                   </div>
                 </div>
+
+                <div className="section">
+                  <div className="section-heading billing-heading">
+                    <div className="icon-box">📍</div>
+                    <div><h2>Billing address</h2><p>Enter your billing address for this payment.</p></div>
+                  </div>
+
+                  <div className="form-grid">
+                    <div className="field full" style={{ position: 'relative' }}><label className="required">Address line 1</label>
+                      <input className={cls('address1')} maxLength={120} value={info.address1} onChange={onAddress1} autoComplete="off"
+                        onFocus={() => info.address1.trim().length >= 3 && setSugOpen(true)}
+                        onBlur={() => setTimeout(() => setSugOpen(false), 150)}
+                        placeholder="Street address" />
+                      {sugOpen && (sugLoading || sug.length > 0) && (
+                        <div className="addr-sug">
+                          {sugLoading && <div className="addr-sug-load">Searching…</div>}
+                          {sug.map((s, i) => (<button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickAddress(s)}>{s.label}</button>))}
+                          {!sugLoading && sug.length === 0 && <div className="addr-sug-load">No matches</div>}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="field full"><label>Address line 2 <span className="optional">(optional)</span></label>
+                      <input className="ti" maxLength={120} value={info.address2} onChange={si('address2')} placeholder="Apartment, suite, unit, etc." /></div>
+
+                    <div className="field" style={{ position: 'relative' }}><label className="required">City</label>
+                      <input className={cls('city')} maxLength={58} value={info.city} onChange={onCity} autoComplete="off"
+                        onFocus={() => info.city.trim().length >= 2 && setCityOpen(true)}
+                        onBlur={() => setTimeout(() => setCityOpen(false), 150)}
+                        placeholder="Enter city" />
+                      {cityOpen && (cityLoading || citySug.length > 0) && (
+                        <div className="addr-sug">
+                          {cityLoading && <div className="addr-sug-load">Searching…</div>}
+                          {citySug.map((s, i) => (<button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickCity(s)}>{s.label}</button>))}
+                          {!cityLoading && citySug.length === 0 && <div className="addr-sug-load">No matches</div>}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="field"><label className="required">State / Region</label>
+                      {statesFor(info.country) ? (
+                        <select className={cls('state')} value={info.state} onChange={onStateSelect}>
+                          <option value="">Select state / region</option>
+                          {statesFor(info.country).map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      ) : (
+                        <input className={cls('state')} maxLength={58} value={info.state} onChange={onStateF} placeholder="State / Region" />
+                      )}
+                    </div>
+
+                    <div className="field"><label className="required">ZIP / Postal code</label>
+                      <input className={cls('zip')} maxLength={zipRule(info.country).max} value={info.zip} onChange={onZip} placeholder={zipRule(info.country).ph} /></div>
+
+                    <div className="field"><label className="required">Country</label>
+                      <select value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
+                  </div>
+                </div>
+
+                <button className="primary" type="submit">Continue to payment &nbsp;→</button>
+                <div className="action-note">🔒 You can review your details before the final payment.</div>
+              </form>
+            )}
+
+            {/* ---------- STEP 2: PAYMENT ---------- */}
+            {step === 1 && (
+              <>
+                <div className="section-heading">
+                  <div className="icon-box">💳</div>
+                  <div><h2>Payment method</h2><p>Choose how you&apos;d like to pay. Powered by payUnexa.</p></div>
+                </div>
+
+                <div className="gift-box">
+                  <div className="gift-head">Gift card / promo</div>
+                  <div className="gift-sub">Enter a gift card, voucher or promotional code</div>
+                  <div className="gift-row">
+                    <span className="plus">+</span>
+                    <input className="ti" maxLength={25} placeholder="Enter code (try SAVE10)" value={giftInput}
+                      onChange={(e) => setGiftInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyGift(); } }} />
+                    <button className="btn-secondary" type="button" onClick={applyGift}>Apply</button>
+                  </div>
+                  {giftErr && <div className="inline-msg error">{giftErr}</div>}
+                  {gift && <div className="inline-msg success"><b>{gift.kind} “{gift.code}”</b> applied — {gift.type === 'flat' ? `${money(discount)} off` : `10% off — you saved ${money(discount)}`} <button className="linklike" style={{ marginLeft: 6 }} onClick={() => { setGift(null); setGiftErr(''); }}>Remove</button></div>}
+                </div>
+
+                <div className="pl-banner" role="button" tabIndex={0} onClick={() => setMethod('emi')}>
+                  <div className="pl-text"><b>{info.name || 'You'}</b>, pay 4 interest-free payments of <b>{money(round2(total / 4))}</b> with <b>payUnexa Pay Later</b>. Subject to eligibility. <span className="pl-link">Learn more</span></div>
+                  <div className="pl-div" />
+                  <div className="pl-apr"><b>0% APR</b><span>No interest. Ever.</span></div>
+                </div>
+
+                <div className="pmt-group">
+                  <div className="pmt-group-title">Cards</div>
+                  {savedCards.map((c) => (
+                    <div key={c.key} className={`payopt saved-card ${method === c.key ? 'selected' : ''}`} onClick={() => setMethod(c.key)}>
+                      <input type="radio" name="pay" readOnly checked={method === c.key} />
+                      <div><span className={`blogo ${BRAND_BADGE[c.brand]}`}>{BRAND_TEXT[c.brand]}</span></div>
+                      <div><div className="c-title">{c.bank}</div><div className="c-sub">•••• {c.last4}{c.isNew ? ' · tokenized' : ''}</div></div>
+                      <div className="c-name">{c.name}</div>
+                      <div className="c-exp">{c.exp}</div>
+                      <div className="c-cvv" onClick={(e) => e.stopPropagation()}>
+                        {c.isNew ? <span className="cvv-ok">CVV verified</span> :
+                          <input className="ti cvv-input" placeholder="CVV" maxLength={4} inputMode="numeric" value={cvv[c.key] || ''}
+                            onChange={(e) => setCvv((v) => ({ ...v, [c.key]: e.target.value.replace(/\D/g, '').slice(0, 4) }))} />}
+                      </div>
+                    </div>
+                  ))}
+                  <div className={`payopt ${method === 'newcard' ? 'selected' : ''}`} onClick={() => setMethod('newcard')}>
+                    <div className="opt-head">
+                      <input type="radio" name="pay" readOnly checked={method === 'newcard'} />
+                      <span className="nc-plus">+</span>
+                      <span><span className="opt-title">Add a new card</span><span className="opt-sub">Visa · Mastercard only — tokenized &amp; secure</span></span>
+                      <span className="chev">▾</span>
+                    </div>
+                    <div className={`opt-body ${method === 'newcard' ? 'open' : ''}`} onClick={(e) => e.stopPropagation()}>
+                      <div className="net-badges" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                        {SUPPORTED_BRANDS.map((n) => (
+                          <span key={n} className={`blogo ${BRAND_BADGE[n]} ${networks.includes(n) ? '' : 'off'}`}>{BRAND_TEXT[n]}</span>
+                        ))}
+                      </div>
+                      <div className="form-grid">
+                        <div className="field span2"><label>Card number</label>
+                          <div className="num-wrap">
+                            <input className="ti" inputMode="numeric" autoComplete="cc-number" placeholder="1234 5678 9012 3456" value={nc.number}
+                              onChange={(e) => setNc({ ...nc, number: fmtCard(e.target.value, detectBrand(e.target.value.replace(/\D/g, ''))) })} />
+                            <span className={`blogo ${BRAND_BADGE[detectBrand(nc.number.replace(/\D/g, ''))]}`}>{BRAND_TEXT[detectBrand(nc.number.replace(/\D/g, ''))]}</span>
+                          </div>
+                        </div>
+                        <div className="field span2"><label>Name on card</label><input className="ti" autoComplete="cc-name" placeholder="Name as printed on card" value={nc.holder} onChange={(e) => setNc({ ...nc, holder: e.target.value })} /></div>
+                        <div className="field"><label>Expiry (MM/YY)</label><input className="ti" inputMode="numeric" autoComplete="cc-exp" placeholder="MM/YY" value={nc.exp} onChange={(e) => setNc({ ...nc, exp: fmtExp(e.target.value) })} /></div>
+                        <div className="field"><label>CVV <button className="linklike" type="button" style={{ fontSize: 11.5 }} onClick={() => setInfoModal(INFO.cvv)}>What&apos;s this?</button></label>
+                          <input className="ti" maxLength={4} inputMode="numeric" placeholder="•••" value={nc.cvc} onChange={(e) => setNc({ ...nc, cvc: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></div>
+                      </div>
+                      <button className="btn-primary sm" type="button" onClick={addNewCard} style={{ marginTop: 12 }}>Add your card</button>
+                      {ncErr && <div className="inline-msg error">{ncErr}</div>}
+                      <div className="secure-note">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+                        Encrypted end-to-end. payUnexa is PCI-DSS Level 1 certified — your full card number and CVV never leave your browser.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pmt-group">
+                  <div className="pmt-group-title">Wallets</div>
+                  <PayOpt mkey="wallet" title="Wallets" sub="One-tap payment from your wallet balance" tags={walletList.slice(0, 3).join(' · ')}
+                    ico={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="6.5" width="18" height="13" rx="2.5" /><path d="M3 10.5h18" /><circle cx="16.5" cy="14.5" r="1.2" fill="currentColor" /></svg>}>
+                    <div className="chips">{walletList.map((w) => (
+                      <button type="button" key={w} className={`chip ${walletSel === w ? 'active' : ''}`} onClick={() => setWalletSel(w)}>{w}</button>
+                    ))}</div>
+                    {walletSel && <div className="pick-note">You will be redirected to {walletSel} to authorise the payment.</div>}
+                  </PayOpt>
+                </div>
+
+                <div className="pmt-group">
+                  <div className="pmt-group-title">EMI &amp; Pay Later</div>
+                  <PayOpt mkey="emi" title="EMI / payUnexa Pay Later" sub="Split your payment into easy monthly instalments" tags="0% APR plans available"
+                    ico={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M3.5 10h17M8 3v4M16 3v4" /></svg>}>
+                    <div className="emi-head"><span /><span>Plan</span><span>Tenure</span><span>Monthly</span><span>Interest</span><span>APR</span></div>
+                    {plans.map((p) => (
+                      <label key={p.key} className={`emi-row ${emiPlan === p.key ? 'sel' : ''}`}>
+                        <input type="radio" name="emi" checked={emiPlan === p.key} onChange={() => setEmiPlan(p.key)} />
+                        <span className="e-name">{p.name}</span><span className="e-ten">{p.tenure}</span>
+                        <span className="e-mon">{money(p.monthly)}/mo</span>
+                        <span className="e-int">{p.interest > 0 ? '+' + money(p.interest) : money(0)}</span>
+                        <span className="e-apr">{p.apr}</span>
+                      </label>
+                    ))}
+                    <div className="emi-fine">No-cost EMI available on select cards. Processing fee may apply per bank terms. Plans recalculated on your total.</div>
+                  </PayOpt>
+                </div>
+
+                <div className="wiz-nav">
+                  <button className="btn-secondary" type="button" onClick={() => setStep(0)}>← Back</button>
+                  <button className="primary" style={{ width: 'auto', minWidth: 210 }} type="button" disabled={!ready()} onClick={() => ready() && setStep(2)}>Continue to review &nbsp;→</button>
+                </div>
+              </>
+            )}
+
+            {/* ---------- STEP 3: REVIEW ---------- */}
+            {step === 2 && (
+              <>
+                <div className="section-heading">
+                  <div className="icon-box">🧾</div>
+                  <div><h2>Review &amp; confirm</h2><p>Confirm your details, then complete the payment.</p></div>
+                </div>
+                <div className="rev-row"><span className="rev-lbl">Paying to</span><span className="rev-val">payUnexa merchant</span></div>
+                <div className="rev-row"><span className="rev-lbl">Customer</span><span className="rev-val">{info.name || '—'}<br />{info.email}</span></div>
+                <div className="rev-row"><span className="rev-lbl">Payment method</span><span className="rev-val">{method ? methodLabel() : '— not selected —'}</span></div>
+                <div className="rev-row"><span className="rev-lbl">Amount</span><span className="rev-val">{money(amt)}</span></div>
+                {discount > 0 && <div className="rev-row"><span className="rev-lbl">Discount ({gift.code})</span><span className="rev-val">−{money(discount)}</span></div>}
+                {codFee > 0 && <div className="rev-row"><span className="rev-lbl">COD handling</span><span className="rev-val">{money(codFee)}</span></div>}
+                <div className="rev-row"><span className="rev-lbl"><b>Total</b></span><span className="rev-val"><b>{money(total)}</b></span></div>
+                <div className="wiz-nav">
+                  <button className="btn-secondary" type="button" onClick={() => setStep(1)}>← Back</button>
+                  <button className="primary" style={{ width: 'auto', minWidth: 210 }} type="button" disabled={!ready()} onClick={placeOrder}>Pay {money(total)}</button>
+                </div>
+              </>
+            )}
+          </section>
+
+          {/* ---------- SIDEBAR ---------- */}
+          <aside className="sidebar">
+            <section className="card side-card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <div className="icon-box">🧾</div><h2>Payment summary</h2>
               </div>
-            </div>
+              <div className="summary-row"><span>Payment amount</span><strong>{money(amt)}</strong></div>
+              {discount > 0 && <div className="summary-row"><span>Discount ({gift.code})</span><strong>−{money(discount)}</strong></div>}
+              {codFee > 0 && <div className="summary-row"><span>COD handling</span><strong>{money(codFee)}</strong></div>}
+              <div className="summary-row total-row"><span>Total</span><strong>{money(total)} {currency}</strong></div>
+              {method === 'emi' && emiPlan && (() => { const p = plans.find((x) => x.key === emiPlan); return <div className="side-info">or {p.tenure} × {money(p.monthly)} with {p.name} ({p.apr})</div>; })()}
+              <div className="side-info"><strong>ⓘ You&apos;ll be charged in {currency}.</strong>Payment details are encrypted during transmission.</div>
+            </section>
 
-            {/* Wallets */}
-            <div className="pmt-group">
-              <div className="pmt-group-title">Wallets</div>
-              <PayOpt mkey="wallet" title="Wallets" sub="One-tap payment from your wallet balance" tags={walletList.slice(0, 3).join(' · ')}
-                ico={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3" y="6.5" width="18" height="13" rx="2.5" /><path d="M3 10.5h18" /><circle cx="16.5" cy="14.5" r="1.2" fill="currentColor" /></svg>}>
-                <div className="chips">{walletList.map((w) => (
-                  <button type="button" key={w} className={`chip ${walletSel === w ? 'active' : ''}`} onClick={() => setWalletSel(w)}>{w}</button>
-                ))}</div>
-                {walletSel && <div className="pick-note">You will be redirected to {walletSel} to authorise the payment.</div>}
-              </PayOpt>
-            </div>
+            <section className="card side-card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                <div className="icon-box">📋</div>
+                <h2>{step === 0 ? 'Complete your information to continue' : step === 1 ? 'Choose how to pay' : 'Review and confirm'}</h2>
+              </div>
+              <div style={{ color: 'var(--pmuted)', fontSize: 12, marginLeft: 48 }}>
+                {step === 0 ? "Once you fill in your details, you'll be able to choose your payment method." : step === 1 ? 'Select a payment method to continue.' : 'Confirm the details, then pay securely.'}
+              </div>
+              {[['Enter customer information', 0], ['Choose payment method', 1], ['Review and pay', 2]].map(([label, i]) => (
+                <div className="trust-item" key={i}>
+                  <div className={`check ${step > i ? '' : step === i ? 'on' : 'off'}`}>{step > i ? '✓' : '●'}</div>
+                  <div style={step < i ? { color: 'var(--pmuted)' } : undefined}>{label}</div>
+                </div>
+              ))}
+            </section>
 
-            {/* EMI / Pay later */}
-            <div className="pmt-group">
-              <div className="pmt-group-title">EMI &amp; Pay Later</div>
-              <PayOpt mkey="emi" title="EMI / payUnexa Pay Later" sub="Split your payment into easy monthly instalments" tags="0% APR plans available"
-                ico={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M3.5 10h17M8 3v4M16 3v4" /></svg>}>
-                <div className="emi-head"><span /><span>Plan</span><span>Tenure</span><span>Monthly</span><span>Interest</span><span>APR</span></div>
-                {plans.map((p) => (
-                  <label key={p.key} className={`emi-row ${emiPlan === p.key ? 'sel' : ''}`}>
-                    <input type="radio" name="emi" checked={emiPlan === p.key} onChange={() => setEmiPlan(p.key)} />
-                    <span className="e-name">{p.name}</span><span className="e-ten">{p.tenure}</span>
-                    <span className="e-mon">{money(p.monthly)}/mo</span>
-                    <span className="e-int">{p.interest > 0 ? '+' + money(p.interest) : money(0)}</span>
-                    <span className="e-apr">{p.apr}</span>
-                  </label>
-                ))}
-                <div className="emi-fine">No-cost EMI available on select cards. Processing fee may apply per bank terms. Plans recalculated on your total.</div>
-              </PayOpt>
-            </div>
-
-            <div className="wiz-nav">
-              <button className="btn-secondary" type="button" onClick={() => setStep(0)}>Back</button>
-              <button className="btn-primary sm" type="button" disabled={!ready()} onClick={() => ready() && setStep(2)}>Continue to review</button>
-            </div>
-          </div>
-          )}
-
-          {/* ---------- 3. REVIEW ---------- */}
-          {step === 2 && (
-          <div className="card">
-            <h2><span className="stepnum">3</span> Review &amp; place order</h2>
-            <div className="rev-row"><span className="rev-lbl">Paying to</span><span className="rev-val">payUnexa merchant</span></div>
-            <div className="rev-row"><span className="rev-lbl">Customer</span><span className="rev-val">{info.name || '—'}<br />{info.email}</span></div>
-            <div className="rev-row"><span className="rev-lbl">Payment method</span><span className="rev-val">{method ? methodLabel() : '— not selected —'}</span></div>
-            <div className="rev-row"><span className="rev-lbl">Amount</span><span className="rev-val">{money(amt)}</span></div>
-            {discount > 0 && <div className="rev-row"><span className="rev-lbl">Discount ({gift.code})</span><span className="rev-val">−{money(discount)}</span></div>}
-            {codFee > 0 && <div className="rev-row"><span className="rev-lbl">COD handling</span><span className="rev-val">{money(codFee)}</span></div>}
-            <div className="rev-row"><span className="rev-lbl"><b>Total</b></span><span className="rev-val"><b>{money(total)}</b></span></div>
-            <div className="wiz-nav">
-              <button className="btn-secondary" type="button" onClick={() => setStep(1)}>Back</button>
-            </div>
-          </div>
-          )}
+            <section className="card side-card">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="icon-box" style={{ color: 'var(--psuccess)', background: '#eaf9f4' }}>✓</div>
+                <div><h2>Secure payment</h2><div style={{ color: 'var(--pmuted)', fontSize: 11 }}>Your payment information is processed securely.</div></div>
+              </div>
+              {['Encrypted connection (HTTPS)', 'Secure payment processing', 'Additional authentication (3-D Secure)', 'Your data is handled with care'].map((t) => (
+                <div className="trust-item" key={t}><div className="check">✓</div><div>{t}</div></div>
+              ))}
+              <div className="processor-line">Payments processed by <strong>payUnexa</strong></div>
+            </section>
+          </aside>
         </div>
 
-        {/* ---------- ASIDE ---------- */}
-        <aside>
-          <div className="card">
-            <button className="btn-primary big" disabled={step < 2 || !ready()} onClick={placeOrder}>
-              {step === 2 && ready() ? `Pay ${money(total)}` : 'Complete the steps to pay'}
-            </button>
-            <div className="btn-hint">{step === 0 ? 'Enter your details first' : step === 1 ? (!method ? 'Choose a payment method' : !ready() ? 'Finish the selected method' : 'Continue to review') : 'You will be charged securely'}</div>
-            <hr />
-            <div className="sum-title">Order Summary</div>
-            <div className="sum-line"><span>Amount</span><span>{money(amt)}</span></div>
-            {discount > 0 && <div className="sum-line"><span>Discount ({gift.code})</span><span>−{money(discount)}</span></div>}
-            {codFee > 0 && <div className="sum-line"><span>COD handling</span><span>{money(codFee)}</span></div>}
-            <div className="sum-line total"><span>Total</span><span>{money(total)}</span></div>
-            {method === 'emi' && emiPlan && (() => { const p = plans.find((x) => x.key === emiPlan); return <div className="emi-note">or {p.tenure} × {money(p.monthly)} with {p.name} ({p.apr})</div>; })()}
-            <div className="cur-note">Charged securely in <b>{currency}</b>. <button className="linklike" type="button" onClick={() => setInfoModal(INFO.fx)}>Learn more</button></div>
-            <div className="sum-fine">Card details are tokenized — never stored raw.</div>
-          </div>
-          <div className="card trust">
-            <div className="t-title">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l7 3v5c0 4.6-3 8.1-7 9.2C8 19.1 5 15.6 5 11V6z" /><path d="M9 11.5l2 2 4-4" /></svg>
-              Why checkout is safe
-            </div>
-            <ul>
-              <li>256-bit TLS encryption on every transaction</li>
-              <li>PCI-DSS Level 1 certified infrastructure</li>
-              <li>3-D Secure (OTP) authentication supported</li>
-              <li>Real-time fraud &amp; risk-scoring engine</li>
-              <li>Card details tokenized — never stored raw</li>
-            </ul>
-            <div className="t-foot">Payments processed by <b>payUnexa</b> · 99.99% uptime SLA</div>
-          </div>
-        </aside>
-      </div>
-
-      <SiteFooter />
+        {puxFooter}
+      </main>
 
       {/* processing overlay */}
       {result === 'processing' && (
@@ -991,7 +1090,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
             <div className="result-icon bad">✕</div>
             <h3 style={{ marginTop: 12 }}>Payment Declined</h3>
             <div className="proc-sub" style={{ marginTop: 6 }}>Your payment could not be completed. Try another method.</div>
-            <button className="btn-primary" style={{ marginTop: 16 }} onClick={() => setResult(null)}>Try again</button>
+            <button className="primary" style={{ marginTop: 16, maxWidth: 200 }} onClick={() => setResult(null)}>Try again</button>
           </div>
         </div>
       )}
@@ -1006,8 +1105,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
         </div>
       )}
 
-      {/* toasts */}
-      <div className="toast-wrap">{toasts.map((t) => <div key={t.id} className={`toast show ${t.type === 'error' ? 'error' : ''}`}>{t.msg}</div>)}</div>
-    </>
+      {toastWrap}
+    </div>
   );
 }

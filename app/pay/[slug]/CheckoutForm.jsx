@@ -728,28 +728,36 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const puxHeader = (
     <header className="site-header">
       <div className="header-inner">
-        <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+        <div className="header-left">
           <div className="brand" aria-label="payUnexa"><span className="pay">pay</span><span className="unexa">Unexa</span></div>
+          <div className="header-divider" />
           <div className="secure-header">
-            <div className="lock" aria-hidden="true">🔒</div>
-            <div><div className="secure-title">Secure checkout</div><div className="secure-subtitle">Your payment information is protected</div></div>
+            <div className="secure-header-icon" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>
+            </div>
+            <div className="secure-header-copy">
+              <div className="secure-header-title">Secure checkout</div>
+              <div className="secure-header-subtitle">Your payment information is protected</div>
+            </div>
           </div>
         </div>
-        <div className="help">Need help? &nbsp;<a href="/contact">Contact us</a></div>
+        <div className="help">
+          <span className="help-icon">?</span><span>Need help?</span><a href="/contact">Contact us</a>
+        </div>
       </div>
     </header>
   );
   const puxFooter = (
     <footer className="footer">
       <div className="links">
-        <a href="/conditions-of-use">Terms of Service</a><span>·</span>
-        <a href="/privacy">Privacy Policy</a><span>·</span>
-        <a href="/refund-policy">Refund &amp; Cancellation Policy</a><span>·</span>
+        <a href="/conditions-of-use">Conditions of Use</a><span>·</span>
+        <a href="/privacy">Privacy Notice</a><span>·</span>
+        <a href="/refund-policy">Refund &amp; Cancellation</a><span>·</span>
         <a href="/security">Security</a><span>·</span>
         <a href="/help">Help</a><span>·</span>
-        <a href="/contact">Contact</a>
+        <a href="/contact">Contact Us</a>
       </div>
-      <div>© {new Date().getFullYear()} payUnexa Technologies. All rights reserved.</div>
+      <div>© {new Date().getFullYear()} payUnexa Technologies · PCI-DSS Level 1 · Payments secured with 256-bit TLS</div>
     </footer>
   );
   const toastWrap = <div className="toast-wrap">{toasts.map((t) => <div key={t.id} className={`toast show ${t.type === 'error' ? 'error' : ''}`}>{t.msg}</div>)}</div>;
@@ -802,12 +810,12 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   function verifyRight(ch) {
     const s = vrf[ch];
     if (s.verified) return null;
-    if (!s.sent) return <button type="button" className="verify-btn" disabled={s.loading} onClick={() => sendCode(ch)}>{s.loading ? 'Sending…' : '✈ Send code'}</button>;
+    if (!s.sent) return <button type="button" className="verification-button" disabled={s.loading} onClick={() => sendCode(ch)}>{s.loading ? 'Sending…' : 'Send verification code'}</button>;
     return (
       <>
         <input className="ti vrf-code" inputMode="numeric" maxLength={6} placeholder="6-digit code" value={s.code}
           onChange={(e) => setVrfField(ch, { code: e.target.value.replace(/\D/g, '').slice(0, 6) })} />
-        <button type="button" className="verify-btn" style={{ minWidth: 108 }} disabled={s.loading} onClick={() => checkCode(ch)}>{s.loading ? 'Checking…' : 'Verify'}</button>
+        <button type="button" className="verification-button" style={{ minWidth: 108 }} disabled={s.loading} onClick={() => checkCode(ch)}>{s.loading ? 'Checking…' : 'Verify'}</button>
       </>
     );
   }
@@ -850,129 +858,126 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
         <nav className="stepper" aria-label="Checkout progress">
           {steps.map((s, i) => (
             <div key={i} className={`step ${i === stepIdx ? 'active' : ''} ${i < stepIdx ? 'done' : ''}`}>
-              <div className="step-dot">{i < stepIdx ? '✓' : i + 1}</div>
-              <div className="step-copy"><div className="step-name">{s.name}</div><div className="step-description">{s.desc}</div></div>
+              <div className="step-marker">{i < stepIdx ? '✓' : i + 1}</div>
+              <div className="step-copy"><div className="step-title">{s.name}</div><div className="step-description">{s.desc}</div></div>
             </div>
           ))}
         </nav>
 
-        <div className="grid">
+        <div className="checkout-grid">
           <section className="card main-card">
             {/* ---------- STEP 1: DETAILS ---------- */}
             {step === 0 && (
               <form onSubmit={saveDetails}>
-                <div className="section">
-                  <div className="section-heading">
-                    <div className="icon-box">👤</div>
-                    <div><h1>Customer information</h1><p>Enter your information to continue with your payment.</p></div>
+                <div className="section-heading">
+                  <div className="section-icon" aria-hidden="true">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.7-3.7 3.2-5.5 7-5.5s6.3 1.8 7 5.5" /></svg>
                   </div>
+                  <div><h1>Customer information</h1><p>Enter your information to continue with your payment.</p></div>
+                </div>
 
-                  <div className="amount-panel">
-                    <div className="amount-icon">$</div>
-                    <div><div className="amount-title">Payment amount</div><div className="amount-note">You will be charged in {currency}</div></div>
-                    <div className="amount-value">{money(amt)} {currency}</div>
-                    <div className="secure-pill">🔒 Secure payment</div>
+                <div className="amount-group">
+                  <label className="amount-label" htmlFor="pux-amount">Amount to pay ({currency}) <span className="amount-range">— {money(MIN_AMOUNT)} to {money(MAX_AMOUNT)}</span></label>
+                  <div className="money-input">
+                    <span className="money-input-prefix">$</span>
+                    <input id="pux-amount" className={`amount-input${shakeKey === 'amount' ? ' shake' : ''}`} type="text" inputMode="decimal" maxLength={7} value={amount} onChange={onAmount} placeholder="0.00" aria-label={`Amount to pay in ${currency}`} />
                   </div>
+                </div>
 
-                  <div className="form-grid">
-                    <div className="field full"><label className="required">Amount to pay ({currency}) — {money(MIN_AMOUNT)} to {money(MAX_AMOUNT)}</label>
-                      <input className={cls('amount')} type="text" inputMode="decimal" maxLength={7} value={amount} onChange={onAmount} placeholder="0.00" /></div>
+                <div className="form-grid">
+                  <div className="field full"><label className="field-label required">Full name</label>
+                    <input className={cls('name')} maxLength={60} value={info.name} onChange={onName} placeholder="Jane Doe" /></div>
 
-                    <div className="field full"><label className="required">Full name</label>
-                      <input className={cls('name')} maxLength={60} value={info.name} onChange={onName} placeholder="Jane Doe" /></div>
-
-                    <div className="field full"><label className="required">Email address</label>
-                      <div className="input-row">
-                        <input className={cls('email')} type="email" maxLength={254} value={info.email} onChange={onEmail} placeholder="you@example.com" />
-                        {verifyRight('email')}
-                      </div>
-                      {verifyBelow('email', "We'll send a verification code to your email.")}
+                  <div className="field full"><label className="field-label required">Email address</label>
+                    <div className="inline-field">
+                      <input className={cls('email')} type="email" maxLength={254} value={info.email} onChange={onEmail} placeholder="you@example.com" />
+                      {verifyRight('email')}
                     </div>
+                    {verifyBelow('email', "We'll send a verification code to your email.")}
+                  </div>
 
-                    <div className="field full">
-                      <div className="whatsapp-row">
-                        <div>
-                          <label className="required">WhatsApp number</label>
-                          <div className="input-row">
-                            <div className="phone-input">
-                              <span className="country-code">{info.country} {DIAL[info.country] || ''} ▾</span>
-                              <input className={cls('whatsapp')} type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />
-                            </div>
-                            {verifyRight('whatsapp')}
+                  <div className="field full">
+                    <div className="phone-line">
+                      <div>
+                        <label className="field-label required">WhatsApp number</label>
+                        <div className="phone-verification">
+                          <div className="phone-control">
+                            <span className="phone-prefix">{info.country} {DIAL[info.country] || ''} ▾</span>
+                            <input className={cls('whatsapp')} type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />
                           </div>
-                          {verifyBelow('whatsapp', 'Used for payment notifications and verification.')}
+                          {verifyRight('whatsapp')}
                         </div>
-                        <div>
-                          <label>Phone number <span className="optional">(optional)</span></label>
-                          <div className="phone-input">
-                            <span className="country-code">☎</span>
-                            <input type="tel" maxLength={16} value={info.phone} onChange={onPhoneLike('phone')} placeholder="Alternate phone number" />
-                          </div>
-                        </div>
+                        {verifyBelow('whatsapp', 'Used for payment notifications and verification.')}
+                      </div>
+                      <div>
+                        <label className="field-label">Phone <span className="optional">(optional)</span></label>
+                        <input className="field-control" type="tel" maxLength={16} value={info.phone} onChange={onPhoneLike('phone')} placeholder="Alternate phone" />
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="section">
-                  <div className="section-heading billing-heading">
-                    <div className="icon-box">📍</div>
-                    <div><h2>Billing address</h2><p>Enter your billing address for this payment.</p></div>
+                <div className="section-rule" />
+
+                <div className="billing-heading">
+                  <div className="section-icon" aria-hidden="true">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20V10l8-6 8 6v10" /><path d="M9 20v-6h6v6" /></svg>
                   </div>
-
-                  <div className="form-grid">
-                    <div className="field full" style={{ position: 'relative' }}><label className="required">Address line 1</label>
-                      <input className={cls('address1')} maxLength={120} value={info.address1} onChange={onAddress1} autoComplete="off"
-                        onFocus={() => info.address1.trim().length >= 3 && setSugOpen(true)}
-                        onBlur={() => setTimeout(() => setSugOpen(false), 150)}
-                        placeholder="Street address" />
-                      {sugOpen && (sugLoading || sug.length > 0) && (
-                        <div className="addr-sug">
-                          {sugLoading && <div className="addr-sug-load">Searching…</div>}
-                          {sug.map((s, i) => (<button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickAddress(s)}>{s.label}</button>))}
-                          {!sugLoading && sug.length === 0 && <div className="addr-sug-load">No matches</div>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="field full"><label>Address line 2 <span className="optional">(optional)</span></label>
-                      <input className="ti" maxLength={120} value={info.address2} onChange={si('address2')} placeholder="Apartment, suite, unit, etc." /></div>
-
-                    <div className="field" style={{ position: 'relative' }}><label className="required">City</label>
-                      <input className={cls('city')} maxLength={58} value={info.city} onChange={onCity} autoComplete="off"
-                        onFocus={() => info.city.trim().length >= 2 && setCityOpen(true)}
-                        onBlur={() => setTimeout(() => setCityOpen(false), 150)}
-                        placeholder="Enter city" />
-                      {cityOpen && (cityLoading || citySug.length > 0) && (
-                        <div className="addr-sug">
-                          {cityLoading && <div className="addr-sug-load">Searching…</div>}
-                          {citySug.map((s, i) => (<button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickCity(s)}>{s.label}</button>))}
-                          {!cityLoading && citySug.length === 0 && <div className="addr-sug-load">No matches</div>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="field"><label className="required">State / Region</label>
-                      {statesFor(info.country) ? (
-                        <select className={cls('state')} value={info.state} onChange={onStateSelect}>
-                          <option value="">Select state / region</option>
-                          {statesFor(info.country).map((s) => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      ) : (
-                        <input className={cls('state')} maxLength={58} value={info.state} onChange={onStateF} placeholder="State / Region" />
-                      )}
-                    </div>
-
-                    <div className="field"><label className="required">ZIP / Postal code</label>
-                      <input className={cls('zip')} maxLength={zipRule(info.country).max} value={info.zip} onChange={onZip} placeholder={zipRule(info.country).ph} /></div>
-
-                    <div className="field"><label className="required">Country</label>
-                      <select value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
-                  </div>
+                  <div><h2>Billing address</h2><p>Enter your billing address for this payment.</p></div>
                 </div>
 
-                <button className="primary" type="submit">Continue to payment &nbsp;→</button>
-                <div className="action-note">🔒 You can review your details before the final payment.</div>
+                <div className="form-grid">
+                  <div className="field" style={{ position: 'relative' }}><label className="field-label required">Address line 1</label>
+                    <input className={cls('address1')} maxLength={120} value={info.address1} onChange={onAddress1} autoComplete="off"
+                      onFocus={() => info.address1.trim().length >= 3 && setSugOpen(true)}
+                      onBlur={() => setTimeout(() => setSugOpen(false), 150)}
+                      placeholder="Street address" />
+                    {sugOpen && (sugLoading || sug.length > 0) && (
+                      <div className="addr-sug">
+                        {sugLoading && <div className="addr-sug-load">Searching…</div>}
+                        {sug.map((s, i) => (<button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickAddress(s)}>{s.label}</button>))}
+                        {!sugLoading && sug.length === 0 && <div className="addr-sug-load">No matches</div>}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="field"><label className="field-label">Address line 2 <span className="optional">(optional)</span></label>
+                    <input className="ti" maxLength={120} value={info.address2} onChange={si('address2')} placeholder="Apartment, suite, unit, etc." /></div>
+
+                  <div className="field" style={{ position: 'relative' }}><label className="field-label required">City</label>
+                    <input className={cls('city')} maxLength={58} value={info.city} onChange={onCity} autoComplete="off"
+                      onFocus={() => info.city.trim().length >= 2 && setCityOpen(true)}
+                      onBlur={() => setTimeout(() => setCityOpen(false), 150)}
+                      placeholder="Enter city" />
+                    {cityOpen && (cityLoading || citySug.length > 0) && (
+                      <div className="addr-sug">
+                        {cityLoading && <div className="addr-sug-load">Searching…</div>}
+                        {citySug.map((s, i) => (<button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickCity(s)}>{s.label}</button>))}
+                        {!cityLoading && citySug.length === 0 && <div className="addr-sug-load">No matches</div>}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="field"><label className="field-label required">State / Region</label>
+                    {statesFor(info.country) ? (
+                      <select className={cls('state')} value={info.state} onChange={onStateSelect}>
+                        <option value="">Select state / region</option>
+                        {statesFor(info.country).map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <input className={cls('state')} maxLength={58} value={info.state} onChange={onStateF} placeholder="State / Region" />
+                    )}
+                  </div>
+
+                  <div className="field"><label className="field-label required">ZIP / Postal code</label>
+                    <input className={cls('zip')} maxLength={zipRule(info.country).max} value={info.zip} onChange={onZip} placeholder={zipRule(info.country).ph} /></div>
+
+                  <div className="field"><label className="field-label required">Country</label>
+                    <select className="field-control" value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
+                </div>
+
+                <button className="continue-button" type="submit">Continue to payment</button>
+                <div className="cta-note"><span aria-hidden="true">▣</span><span>You can review your details before the final payment.</span></div>
               </form>
             )}
 
@@ -1116,42 +1121,53 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
           {/* ---------- SIDEBAR ---------- */}
           <aside className="sidebar">
             <section className="card side-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div className="icon-box">🧾</div><h2>Payment summary</h2>
+              <div className="side-heading">
+                <div className="section-icon" aria-hidden="true">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /></svg>
+                </div>
+                <h2>Order Summary</h2>
               </div>
-              <div className="summary-row"><span>Payment amount</span><strong>{money(amt)}</strong></div>
+              <div className="summary-row"><span>Amount</span><strong>{money(amt)}</strong></div>
               {discount > 0 && <div className="summary-row"><span>Discount ({gift.code})</span><strong>−{money(discount)}</strong></div>}
               {codFee > 0 && <div className="summary-row"><span>COD handling</span><strong>{money(codFee)}</strong></div>}
-              <div className="summary-row total-row"><span>Total</span><strong>{money(total)} {currency}</strong></div>
-              {method === 'emi' && emiPlan && (() => { const p = plans.find((x) => x.key === emiPlan); return <div className="side-info">or {p.tenure} × {money(p.monthly)} with {p.name} ({p.apr})</div>; })()}
-              <div className="side-info"><strong>ⓘ You&apos;ll be charged in {currency}.</strong>Payment details are encrypted during transmission.</div>
+              <div className="summary-row summary-total"><span>Total</span><strong>{money(total)}</strong></div>
+              {method === 'emi' && emiPlan && (() => { const p = plans.find((x) => x.key === emiPlan); return <div className="summary-info">or {p.tenure} × {money(p.monthly)} with {p.name} ({p.apr})</div>; })()}
+              <div className="summary-info"><strong>Charged securely in {currency}.</strong><span>Card details are tokenized — never stored raw. </span><span className="learn-more">Learn more</span></div>
             </section>
 
             <section className="card side-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                <div className="icon-box">📋</div>
-                <h2>{step === 0 ? 'Complete your information to continue' : step === 1 ? 'Choose how to pay' : 'Review and confirm'}</h2>
-              </div>
-              <div style={{ color: 'var(--pmuted)', fontSize: 12, marginLeft: 48 }}>
-                {step === 0 ? "Once you fill in your details, you'll be able to choose your payment method." : step === 1 ? 'Select a payment method to continue.' : 'Confirm the details, then pay securely.'}
-              </div>
-              {[['Enter customer information', 0], ['Choose payment method', 1], ['Review and pay', 2]].map(([label, i]) => (
-                <div className="trust-item" key={i}>
-                  <div className={`check ${step > i ? '' : step === i ? 'on' : 'off'}`}>{step > i ? '✓' : '●'}</div>
-                  <div style={step < i ? { color: 'var(--pmuted)' } : undefined}>{label}</div>
+              <div className="side-heading">
+                <div className="section-icon" aria-hidden="true">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 13h5" /></svg>
                 </div>
-              ))}
+                <h2>Complete the steps to pay</h2>
+              </div>
+              <div className="state-copy">
+                {step === 0 ? 'Enter your details first.' : step === 1 ? 'Select a payment method to continue.' : 'Confirm the details, then pay securely.'}
+              </div>
+              <div className="state-list">
+                {[['Enter customer information', 0], ['Choose payment method', 1], ['Review and pay', 2]].map(([label, i]) => (
+                  <div className={`state-row ${step === i ? 'active' : ''} ${step > i ? 'done' : ''}`} key={i}>
+                    <div className="state-dot">{step > i ? '✓' : '●'}</div>
+                    <div style={step < i ? { color: 'var(--pmuted)' } : undefined}>{label}</div>
+                  </div>
+                ))}
+              </div>
             </section>
 
             <section className="card side-card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div className="icon-box" style={{ color: 'var(--psuccess)', background: '#eaf9f4' }}>✓</div>
-                <div><h2>Secure payment</h2><div style={{ color: 'var(--pmuted)', fontSize: 11 }}>Your payment information is processed securely.</div></div>
+              <div className="security-heading">
+                <div className="security-badge" aria-hidden="true">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v5c0 4.7-2.8 8.1-7 10-4.2-1.9-7-5.3-7-10V6l7-3z" /><path d="m8.8 12 2.1 2.1 4.4-4.7" /></svg>
+                </div>
+                <div><h2>Why checkout is safe</h2><p>Your payment information is protected.</p></div>
               </div>
-              {['Encrypted connection (HTTPS)', 'Secure payment processing', 'Additional authentication (3-D Secure)', 'Your data is handled with care'].map((t) => (
-                <div className="trust-item" key={t}><div className="check">✓</div><div>{t}</div></div>
-              ))}
-              <div className="processor-line">Payments processed by <strong>payUnexa</strong></div>
+              <div className="security-list">
+                {['256-bit TLS encryption on every transaction', 'PCI-DSS Level 1 certified infrastructure', '3-D Secure (OTP) authentication supported', 'Real-time fraud & risk-scoring engine', 'Card details tokenized — never stored raw'].map((t) => (
+                  <div className="security-row" key={t}><div className="security-check">✓</div><div>{t}</div></div>
+                ))}
+              </div>
+              <div className="processor-note">Payments processed by <strong>payUnexa</strong> · 99.99% uptime SLA</div>
             </section>
           </aside>
         </div>

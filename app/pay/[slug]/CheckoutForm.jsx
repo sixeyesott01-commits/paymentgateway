@@ -13,8 +13,11 @@ const COD_FEE = 0.99;
 // Where the customer lands after a completed payment.
 const HOME_URL = 'https://payunexa.com';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const MIN_AMOUNT = 1;
 const MAX_AMOUNT = 9999;
 const SUPPORTED_BRANDS = ['visa', 'mastercard'];
+// One friendly, on-brand line for any error anywhere in the checkout.
+const SLANG = "Oops, that didn't work — give it another shot.";
 
 // Per-country dialling code + expected national-number length for WhatsApp.
 const DIAL = { US: '+1', CA: '+1', IN: '+91', GB: '+44', AU: '+61', AE: '+971', SG: '+65' };
@@ -170,6 +173,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const sugTimer = useRef(null);
   const blankVrf = { sent: false, verified: false, code: '', loading: false, msg: null };
   const [vrf, setVrf] = useState({ email: { ...blankVrf }, whatsapp: { ...blankVrf } });
+  const [shakeKey, setShakeKey] = useState(null);
 
   const amt = Number(amount) || 0;
   const networks = acceptedNetworks(info.country);
@@ -180,6 +184,19 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     setToasts((t) => [...t, { id, msg, type }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 2600);
   }
+
+  // Central error feedback: shake the field, buzz (mobile haptics), show the
+  // friendly slang line. Pass a field key to shake that input; msg optional.
+  function fail(fieldKey, msg) {
+    if (fieldKey) {
+      setShakeKey(fieldKey);
+      setTimeout(() => setShakeKey((k) => (k === fieldKey ? null : k)), 450);
+    }
+    try { navigator?.vibrate?.(120); } catch { /* unsupported */ }
+    toast(msg || SLANG, 'error');
+    return false;
+  }
+  const cls = (key) => 'ti' + (shakeKey === key ? ' shake' : '');
 
   const plans = useMemo(() => {
     const emi = (p, r, n) => (p * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
@@ -248,11 +265,12 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
 
   // --- Hardcoded input guards: block wrong/over-long input at the source ---
   function onAmount(e) {
-    let v = e.target.value.replace(/[^\d.]/g, '');
-    const parts = v.split('.');
-    if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
-    const [intp = '', decp] = v.split('.');
-    v = intp.slice(0, 4) + (v.includes('.') ? '.' + (decp || '').slice(0, 2) : '');
+    const raw = e.target.value.replace(/[^\d.]/g, '');
+    const parts = raw.split('.');
+    let intp = (parts[0] || '').replace(/^0+(?=\d)/, '').slice(0, 4); // no leading zeros, max 4 digits
+    const decp = parts.length > 1 ? parts.slice(1).join('').slice(0, 2) : null;
+    if (intp === '0' && decp === null) intp = ''; // don't leave a bare 0 / 0000
+    let v = intp + (decp !== null ? '.' + decp : '');
     if (v !== '' && v !== '.' && Number(v) > MAX_AMOUNT) return; // never exceed cap
     setAmount(v);
   }
@@ -272,29 +290,29 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const setVrfField = (ch, patch) => setVrf((v) => ({ ...v, [ch]: { ...v[ch], ...patch } }));
   async function sendCode(ch) {
     const target = ch === 'email' ? info.email : info.whatsapp;
-    if (ch === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) return toast('Enter a valid email first', 'error');
-    if (ch === 'whatsapp' && !validateWhatsapp(info.country, info.whatsapp)) return toast('Enter a valid WhatsApp number first', 'error');
+    if (ch === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) return fail('email');
+    if (ch === 'whatsapp' && !validateWhatsapp(info.country, info.whatsapp)) return fail('whatsapp');
     setVrfField(ch, { loading: true, msg: null });
     try {
       const res = await fetch('/api/verify/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: ch, target }) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send code');
+      if (!res.ok) throw new Error(data.error || SLANG);
       setVrfField(ch, { sent: true, loading: false, msg: { type: 'success', t: 'Code sent — check your ' + (ch === 'email' ? 'inbox' : 'WhatsApp') } });
       toast('Verification code sent');
-    } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); }
+    } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
   async function checkCode(ch) {
     const target = ch === 'email' ? info.email : info.whatsapp;
     const code = vrf[ch].code;
-    if (!/^\d{6}$/.test(code)) return setVrfField(ch, { msg: { type: 'error', t: 'Enter the 6-digit code' } });
+    if (!/^\d{6}$/.test(code)) { setVrfField(ch, { msg: { type: 'error', t: 'Enter the 6-digit code' } }); return fail(ch); }
     setVrfField(ch, { loading: true, msg: null });
     try {
       const res = await fetch('/api/verify/check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: ch, target, code }) });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Verification failed');
+      if (!res.ok) throw new Error(data.error || SLANG);
       setVrfField(ch, { verified: true, loading: false, msg: null });
       toast((ch === 'email' ? 'Email' : 'WhatsApp') + ' verified');
-    } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); }
+    } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
   function renderVerify(ch) {
     const s = vrf[ch];
@@ -357,13 +375,17 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   function saveDetails(e) {
     e.preventDefault();
     setPayErr('');
-    if (!(amt > 0)) return toast('Enter the amount to pay', 'error');
-    if (amt > MAX_AMOUNT) return toast(`Amount cannot exceed ${money(MAX_AMOUNT)}`, 'error');
-    if (!info.name || !info.email || !info.whatsapp) return toast('Fill name, email and WhatsApp', 'error');
-    if (!validateWhatsapp(info.country, info.whatsapp)) return toast(`Enter a valid WhatsApp number for ${info.country} (starts with ${DIAL[info.country] || '+ country code'})`, 'error');
-    if (!info.address1 || !info.city || !info.state || !info.zip) return toast('Complete your billing address (line 1, city, state, ZIP)', 'error');
-    if (!vrf.email.verified) return toast('Verify your email (send & enter the code)', 'error');
-    if (!vrf.whatsapp.verified) return toast('Verify your WhatsApp number (send & enter the code)', 'error');
+    if (!(amt >= MIN_AMOUNT) || amt > MAX_AMOUNT) return fail('amount');
+    if (!info.name) return fail('name');
+    if (!info.email) return fail('email');
+    if (!info.whatsapp) return fail('whatsapp');
+    if (!validateWhatsapp(info.country, info.whatsapp)) return fail('whatsapp');
+    if (!info.address1) return fail('address1');
+    if (!info.city) return fail('city');
+    if (!info.state) return fail('state');
+    if (!info.zip) return fail('zip');
+    if (!vrf.email.verified) return fail('email');
+    if (!vrf.whatsapp.verified) return fail('whatsapp');
     setDetailsDone(true);
     setStep(1);
     toast('Details saved');
@@ -419,16 +441,13 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
 
   async function placeOrder() {
     setPayErr('');
-    if (!detailsDone) return toast('Complete your details first', 'error');
-    if (!method) return toast('Choose a payment method', 'error');
-    if (method === 'newcard') return toast('Add your card details first', 'error');
+    if (!detailsDone) return fail(null, 'Complete your details first');
+    if (!method) return fail(null, 'Choose a payment method');
+    if (method === 'newcard') return fail(null, 'Add your card details first');
     if (!ready()) {
-      if (method === 'card1' || method === 'card2') return toast('Enter the CVV for your card', 'error');
-      if (method === 'upi') return toast('Verify a UPI ID or pick an app', 'error');
-      if (method === 'netbanking') return toast('Select your bank', 'error');
-      if (method === 'wallet') return toast('Choose a wallet', 'error');
-      if (method === 'emi') return toast('Select an EMI / Pay Later plan', 'error');
-      return toast('Complete the selected method', 'error');
+      if (method === 'emi') return fail(null, 'Select an EMI / Pay Later plan');
+      if (method === 'wallet') return fail(null, 'Choose a wallet');
+      return fail(null, 'Complete the selected method');
     }
 
     const bm = backendMethod();
@@ -450,11 +469,11 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     try {
       const res = await fetch(`/api/checkout/${slug}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Something went wrong.');
+      if (!res.ok || !data.ok) throw new Error(data.error || SLANG);
       setReference(data.reference || '');
-    } catch (e) {
+    } catch {
       setResult(null);
-      toast(e.message, 'error');
+      fail(null);
     }
   }
 
@@ -522,7 +541,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
 </body></html>`;
 
     const w = window.open('', '_blank');
-    if (!w) { toast('Allow pop-ups to download the invoice', 'error'); return; }
+    if (!w) { fail(null, 'Allow pop-ups to download the invoice'); return; }
     w.document.write(html);
     w.document.close();
     toast('Invoice ready — Save as PDF');
@@ -615,14 +634,14 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
               <form onSubmit={saveDetails}>
                 <h2><span className="stepnum">1</span> Your details</h2>
                 <div className="form-grid" style={{ marginTop: 14 }}>
-                  <div className="field span2"><label>Amount to pay ({currency}) — max {money(MAX_AMOUNT)}</label>
-                    <input className="ti" type="text" inputMode="decimal" maxLength={7} value={amount} onChange={onAmount} placeholder="0.00" /></div>
-                  <div className="field"><label>Full name</label><input className="ti" maxLength={60} value={info.name} onChange={onName} placeholder="Jane Doe" /></div>
-                  <div className="field"><label>Email</label><input className="ti" type="email" maxLength={254} value={info.email} onChange={onEmail} placeholder="you@email.com" />{renderVerify('email')}</div>
-                  <div className="field"><label>WhatsApp number</label><input className="ti" type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />{renderVerify('whatsapp')}</div>
+                  <div className="field span2"><label>Amount to pay ({currency}) — {money(MIN_AMOUNT)} to {money(MAX_AMOUNT)}</label>
+                    <input className={cls('amount')} type="text" inputMode="decimal" maxLength={7} value={amount} onChange={onAmount} placeholder="0.00" /></div>
+                  <div className="field"><label>Full name</label><input className={cls('name')} maxLength={60} value={info.name} onChange={onName} placeholder="Jane Doe" /></div>
+                  <div className="field"><label>Email</label><input className={cls('email')} type="email" maxLength={254} value={info.email} onChange={onEmail} placeholder="you@email.com" />{renderVerify('email')}</div>
+                  <div className="field"><label>WhatsApp number</label><input className={cls('whatsapp')} type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />{renderVerify('whatsapp')}</div>
                   <div className="field"><label>Phone (optional)</label><input className="ti" type="tel" maxLength={16} value={info.phone} onChange={onPhoneLike('phone')} placeholder="Alternate phone" /></div>
                   <div className="field span2" style={{ position: 'relative' }}><label>Address line 1</label>
-                    <input className="ti" maxLength={120} value={info.address1} onChange={onAddress1} autoComplete="off"
+                    <input className={cls('address1')} maxLength={120} value={info.address1} onChange={onAddress1} autoComplete="off"
                       onFocus={() => info.address1.trim().length >= 3 && setSugOpen(true)}
                       onBlur={() => setTimeout(() => setSugOpen(false), 150)}
                       placeholder="Start typing your address…" />
@@ -637,9 +656,9 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                     )}
                   </div>
                   <div className="field span2"><label>Address line 2</label><input className="ti" maxLength={120} value={info.address2} onChange={si('address2')} placeholder="Apt, suite (optional)" /></div>
-                  <div className="field"><label>City</label><input className="ti" maxLength={58} value={info.city} onChange={onCity} /></div>
-                  <div className="field"><label>State / Region</label><input className="ti" maxLength={58} value={info.state} onChange={onStateF} /></div>
-                  <div className="field"><label>ZIP / Postal code</label><input className="ti" maxLength={10} value={info.zip} onChange={onZip} placeholder="10001" /></div>
+                  <div className="field"><label>City</label><input className={cls('city')} maxLength={58} value={info.city} onChange={onCity} /></div>
+                  <div className="field"><label>State / Region</label><input className={cls('state')} maxLength={58} value={info.state} onChange={onStateF} /></div>
+                  <div className="field"><label>ZIP / Postal code</label><input className={cls('zip')} maxLength={10} value={info.zip} onChange={onZip} placeholder="10001" /></div>
                   <div className="field"><label>Country</label>
                     <select className="ti" value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
                 </div>

@@ -26,6 +26,7 @@ a:hover{color:var(--link-h);text-decoration:underline}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
 .shake{animation:shake .4s}
+.ti.shake,.select.shake{border-color:var(--red)!important;box-shadow:0 0 0 3px rgba(197,17,0,.16)!important}
 
 /* ============ HEADER ============ */
 header{background:#fff;border-bottom:1px solid var(--border)}

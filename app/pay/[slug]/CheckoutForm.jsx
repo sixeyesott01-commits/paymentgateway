@@ -35,6 +35,73 @@ function validateWhatsapp(country, raw) {
   return need ? nsn.length === need : (nsn.length >= 6 && nsn.length <= 12);
 }
 
+// ---- States / regions per country (dropdown source + validation) ----
+const STATES = {
+  US: ['Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware', 'District of Columbia', 'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky', 'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi', 'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico', 'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania', 'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont', 'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming'],
+  CA: ['Alberta', 'British Columbia', 'Manitoba', 'New Brunswick', 'Newfoundland and Labrador', 'Northwest Territories', 'Nova Scotia', 'Nunavut', 'Ontario', 'Prince Edward Island', 'Quebec', 'Saskatchewan', 'Yukon'],
+  AU: ['Australian Capital Territory', 'New South Wales', 'Northern Territory', 'Queensland', 'South Australia', 'Tasmania', 'Victoria', 'Western Australia'],
+  IN: ['Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry'],
+  GB: ['England', 'Scotland', 'Wales', 'Northern Ireland'],
+  AE: ['Abu Dhabi', 'Dubai', 'Sharjah', 'Ajman', 'Umm Al Quwain', 'Ras Al Khaimah', 'Fujairah'],
+  SG: ['Central', 'East', 'North', 'North-East', 'West'],
+};
+const statesFor = (country) => STATES[country] || null;
+
+// City type-ahead (Mapbox place search, Nominatim fallback).
+async function geocodeCityMapbox(q, country) {
+  if (!MAPBOX_TOKEN) throw new Error('no mapbox token');
+  const cc = ISO2[country];
+  const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(q)}` +
+    `&access_token=${MAPBOX_TOKEN}&autocomplete=true&limit=6&types=place,locality${cc ? `&country=${cc}` : ''}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('mapbox');
+  const j = await r.json();
+  return (j.features || []).map((f) => {
+    const p = f.properties || {};
+    const c = p.context || {};
+    return { city: p.name || '', state: c.region?.name || '', label: p.full_address || p.name || '' };
+  }).filter((x) => x.city);
+}
+async function geocodeCityNominatim(q, country) {
+  const cc = ISO2[country];
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=6` +
+    `&q=${encodeURIComponent(q)}${cc ? `&countrycodes=${cc.toLowerCase()}` : ''}`;
+  const r = await fetch(url, { headers: { 'Accept-Language': 'en' } });
+  if (!r.ok) throw new Error('nominatim');
+  const j = await r.json();
+  return (j || []).map((it) => {
+    const a = it.address || {};
+    const city = a.city || a.town || a.village || a.municipality || a.hamlet || '';
+    return { city, state: a.state || a.region || '', label: it.display_name || city };
+  }).filter((x) => x.city);
+}
+async function geocodeCity(q, country) {
+  try { const m = await geocodeCityMapbox(q, country); if (m.length) return m; } catch { /* fall through */ }
+  try { return await geocodeCityNominatim(q, country); } catch { return []; }
+}
+
+// ---- Per-country ZIP / postal-code rules (format + validate) ----
+const zipDigits = (n) => (v) => v.replace(/\D/g, '').slice(0, n);
+const zipAlnum = (n) => (v) => v.replace(/[^A-Za-z0-9 ]/g, '').toUpperCase().slice(0, n);
+const zipUS = (v) => { const d = v.replace(/\D/g, '').slice(0, 9); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
+const ZIP_RULES = {
+  US: { re: /^\d{5}(-\d{4})?$/, max: 10, ph: '12345 or 12345-6789', sanitize: zipUS },
+  IN: { re: /^\d{6}$/, max: 6, ph: '560001', sanitize: zipDigits(6) },
+  SG: { re: /^\d{6}$/, max: 6, ph: '238859', sanitize: zipDigits(6) },
+  AU: { re: /^\d{4}$/, max: 4, ph: '2000', sanitize: zipDigits(4) },
+  GB: { re: /^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$/, max: 8, ph: 'SW1A 1AA', sanitize: zipAlnum(8) },
+  CA: { re: /^[A-Z]\d[A-Z] ?\d[A-Z]\d$/, max: 7, ph: 'K1A 0B1', sanitize: zipAlnum(7) },
+  AE: { re: /^.{0,10}$/, max: 10, ph: 'Optional', sanitize: zipAlnum(10), optional: true },
+  Other: { re: /^[A-Za-z0-9 -]{3,10}$/, max: 10, ph: 'Postal code', sanitize: zipAlnum(10) },
+};
+const zipRule = (country) => ZIP_RULES[country] || ZIP_RULES.Other;
+function validateZip(country, zip) {
+  const r = zipRule(country);
+  const z = String(zip || '').trim().toUpperCase();
+  if (!z) return !!r.optional;
+  return r.re.test(z);
+}
+
 // ---- Address autocomplete: Mapbox primary, Nominatim (OSM) fallback ----
 // Set NEXT_PUBLIC_MAPBOX_TOKEN in .env (publishable pk.* token). When unset,
 // autocomplete falls back to keyless Nominatim/OSM.
@@ -174,6 +241,11 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const blankVrf = { sent: false, verified: false, code: '', loading: false, msg: null };
   const [vrf, setVrf] = useState({ email: { ...blankVrf }, whatsapp: { ...blankVrf } });
   const [shakeKey, setShakeKey] = useState(null);
+  const [citySug, setCitySug] = useState([]);
+  const [cityOpen, setCityOpen] = useState(false);
+  const [cityLoading, setCityLoading] = useState(false);
+  const [cityOk, setCityOk] = useState(false);
+  const cityTimer = useRef(null);
 
   const amt = Number(amount) || 0;
   const networks = acceptedNetworks(info.country);
@@ -348,27 +420,54 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     }, 350);
   }
   function pickAddress(s) {
-    setInfo((f) => ({
-      ...f,
-      address1: s.line1 || f.address1,
-      city: s.city || f.city,
-      state: s.state || f.state,
-      zip: (s.zip || f.zip).toUpperCase(),
-      country: COUNTRIES.includes(s.country) ? s.country : f.country,
-    }));
+    setInfo((f) => {
+      const country = COUNTRIES.includes(s.country) ? s.country : f.country;
+      const sl = statesFor(country);
+      const state = sl ? (sl.includes(s.state) ? s.state : '') : (s.state || f.state);
+      return { ...f, address1: s.line1 || f.address1, city: s.city || f.city, state, zip: (s.zip || f.zip).toUpperCase(), country };
+    });
+    setCityOk(Boolean(s.city));
     setSug([]); setSugOpen(false);
     toast('Address filled');
   }
-  const onCity = (e) => setField('city', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 58));
+  // City type-ahead (must be selected from suggestions to count as valid).
+  function onCity(e) {
+    const v = e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 58);
+    setField('city', v);
+    setCityOk(false);
+    setCityOpen(true);
+    clearTimeout(cityTimer.current);
+    if (v.trim().length < 2) { setCitySug([]); setCityLoading(false); return; }
+    setCityLoading(true);
+    const country = info.country;
+    cityTimer.current = setTimeout(async () => {
+      const r = await geocodeCity(v.trim(), country);
+      setCitySug(r); setCityLoading(false);
+    }, 350);
+  }
+  function pickCity(s) {
+    setInfo((f) => {
+      const next = { ...f, city: s.city || f.city };
+      const sl = statesFor(f.country);
+      if (!f.state && sl && sl.includes(s.state)) next.state = s.state;
+      return next;
+    });
+    setCityOk(true); setCitySug([]); setCityOpen(false);
+    toast('City selected');
+  }
   const onStateF = (e) => setField('state', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 58));
-  const onZip = (e) => setField('zip', e.target.value.replace(/[^A-Za-z0-9 -]/g, '').toUpperCase().slice(0, 10));
+  const onStateSelect = (e) => setField('state', e.target.value);
+  const onZip = (e) => setField('zip', zipRule(info.country).sanitize(e.target.value));
   function onCountry(e) {
     const country = e.target.value;
     setInfo((f) => {
       const next = { ...f, country };
       if (!f.whatsapp || f.whatsapp === DIAL[f.country]) next.whatsapp = DIAL[country] || '';
+      next.zip = ''; // ZIP format differs per country — clear stale value
+      next.state = ''; next.city = ''; // state list + city change per country
       return next;
     });
+    setCityOk(false);
     resetVrf('whatsapp');
   }
 
@@ -381,9 +480,10 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     if (!info.whatsapp) return fail('whatsapp');
     if (!validateWhatsapp(info.country, info.whatsapp)) return fail('whatsapp');
     if (!info.address1) return fail('address1');
-    if (!info.city) return fail('city');
-    if (!info.state) return fail('state');
-    if (!info.zip) return fail('zip');
+    const sl = statesFor(info.country);
+    if (sl ? !sl.includes(info.state) : !info.state) return fail('state');
+    if (!cityOk || !info.city) return fail('city');
+    if (!validateZip(info.country, info.zip)) return fail('zip');
     if (!vrf.email.verified) return fail('email');
     if (!vrf.whatsapp.verified) return fail('whatsapp');
     setDetailsDone(true);
@@ -656,9 +756,32 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                     )}
                   </div>
                   <div className="field span2"><label>Address line 2</label><input className="ti" maxLength={120} value={info.address2} onChange={si('address2')} placeholder="Apt, suite (optional)" /></div>
-                  <div className="field"><label>City</label><input className={cls('city')} maxLength={58} value={info.city} onChange={onCity} /></div>
-                  <div className="field"><label>State / Region</label><input className={cls('state')} maxLength={58} value={info.state} onChange={onStateF} /></div>
-                  <div className="field"><label>ZIP / Postal code</label><input className={cls('zip')} maxLength={10} value={info.zip} onChange={onZip} placeholder="10001" /></div>
+                  <div className="field" style={{ position: 'relative' }}><label>City</label>
+                    <input className={cls('city')} maxLength={58} value={info.city} onChange={onCity} autoComplete="off"
+                      onFocus={() => info.city.trim().length >= 2 && setCityOpen(true)}
+                      onBlur={() => setTimeout(() => setCityOpen(false), 150)}
+                      placeholder="Start typing your city…" />
+                    {cityOpen && (cityLoading || citySug.length > 0) && (
+                      <div className="addr-sug">
+                        {cityLoading && <div className="addr-sug-load">Searching…</div>}
+                        {citySug.map((s, i) => (
+                          <button type="button" key={i} className="addr-sug-item" onMouseDown={(e) => e.preventDefault()} onClick={() => pickCity(s)}>{s.label}</button>
+                        ))}
+                        {!cityLoading && citySug.length === 0 && <div className="addr-sug-load">No matches</div>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="field"><label>State / Region</label>
+                    {statesFor(info.country) ? (
+                      <select className={cls('state')} value={info.state} onChange={onStateSelect}>
+                        <option value="">Select state / region</option>
+                        {statesFor(info.country).map((s) => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <input className={cls('state')} maxLength={58} value={info.state} onChange={onStateF} placeholder="State / Region" />
+                    )}
+                  </div>
+                  <div className="field"><label>ZIP / Postal code</label><input className={cls('zip')} maxLength={zipRule(info.country).max} value={info.zip} onChange={onZip} placeholder={zipRule(info.country).ph} /></div>
                   <div className="field"><label>Country</label>
                     <select className="ti" value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
                 </div>

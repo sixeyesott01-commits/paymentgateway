@@ -486,6 +486,38 @@ tbody tr:hover{background:#FAFBFB}
 .pux .btn-secondary{height:42px}
 .pux .wiz-nav{border-top:0;padding-top:16px;margin-top:16px}
 
+/* ---- Step 2 payment method: minimal, compact ---- */
+/* Reset radios/checkboxes — the base input rule sized them like text fields. */
+.pux input[type=radio],.pux input[type=checkbox]{width:16px;height:16px;min-width:16px;flex:0 0 16px;margin:0;padding:0;border:0;border-radius:0;background:none;box-shadow:none!important;accent-color:var(--pprimary);cursor:pointer;appearance:auto;-webkit-appearance:auto}
+.pux input[type=radio]:focus,.pux input[type=checkbox]:focus{box-shadow:none!important}
+.pux .pmt-group{margin-top:16px}
+.pux .pmt-group-title{font-size:11px;font-weight:700;color:var(--pmuted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.pux .payopt{border:1px solid var(--pborder);border-radius:9px;padding:11px 13px;margin-bottom:8px;background:#fff;transition:border-color .14s,box-shadow .14s}
+.pux .payopt:hover{border-color:#b9c4d1}
+.pux .payopt.selected{border-color:var(--pprimary);box-shadow:0 0 0 1px var(--pprimary);background:#f7fbff}
+.pux .opt-head{display:flex;align-items:center;gap:10px}
+.pux .opt-ico{width:30px;height:30px;border-radius:8px;background:#eef5ff;color:var(--pprimary);display:grid;place-items:center;flex:0 0 30px}
+.pux .opt-ico svg{width:16px;height:16px}
+.pux .opt-title{font-size:13px;font-weight:700;display:block;line-height:1.25}
+.pux .opt-sub{font-size:11px;color:var(--pmuted);display:block;line-height:1.3}
+.pux .opt-tags{margin-left:auto;font-size:11px;color:var(--pmuted);white-space:nowrap}
+.pux .chev{color:var(--pmuted);font-size:12px;flex:none;transition:transform .2s}
+.pux .payopt.selected .chev{transform:rotate(180deg)}
+.pux .opt-body{margin-top:11px;padding-top:12px;border-top:1px solid var(--pborder-soft)}
+.pux .nc-plus{width:30px;height:30px;border-radius:8px;background:#eef5ff;color:var(--pprimary);display:grid;place-items:center;font-size:18px;font-weight:700;flex:0 0 30px}
+/* saved-card row: tighten */
+.pux .payopt.saved-card{display:flex;align-items:center;gap:10px}
+.pux .c-title{font-size:12px;font-weight:700}
+.pux .c-sub{font-size:11px;color:var(--pmuted)}
+.pux .c-name,.pux .c-exp{font-size:11px;color:var(--pmuted)}
+.pux .cvv-input{width:64px!important}
+/* wallet chips + emi compact */
+.pux .chips{display:flex;flex-wrap:wrap;gap:7px}
+.pux .chip{height:auto;width:auto;padding:6px 11px;border:1px solid var(--pborder);border-radius:999px;background:#fff;font-size:12px;color:var(--ptext);cursor:pointer}
+.pux .chip.active{border-color:var(--pprimary);color:var(--pprimary);background:#f0f6ff;font-weight:700}
+.pux .pick-note,.pux .emi-fine{font-size:11px;color:var(--pmuted);margin-top:9px}
+.pux .emi-row{font-size:12px}
+
 /* sidebar: summary */
 .pux .side-heading{display:flex;align-items:center;gap:9px;margin-bottom:8px}
 .pux .side-heading h2,.pux .side-card h2{margin:0;font-size:15px;line-height:1.2;letter-spacing:-.2px;display:block}

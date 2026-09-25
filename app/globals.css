@@ -555,6 +555,8 @@ tbody tr:hover{background:#FAFBFB}
 .pux .help-row{display:flex;gap:8px;align-items:stretch}
 .pux .help-row .phone-control{flex:1 1 auto}
 .pux .help-done{font-size:12px;font-weight:700;color:var(--psuccess);display:flex;align-items:center;gap:6px}
+.pux .help-skip{margin-top:10px;background:none;border:0;color:var(--pmuted);font-size:12px;font-weight:600;cursor:pointer;padding:2px 0}
+.pux .help-skip:hover{color:var(--pprimary);text-decoration:underline}
 
 /* footer */
 .pux .footer{padding:18px 0 2px;text-align:center;color:var(--pmuted);font-size:9px;line-height:1.6}

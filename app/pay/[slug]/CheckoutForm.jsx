@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { acceptedNetworks, wallets as walletsFor, detectBrand, NETWORK_LABEL } from '@/lib/payment-methods';
+import { COUNTRY_DATA } from './countries';
 
-const COUNTRIES = ['US', 'IN', 'GB', 'CA', 'AU', 'AE', 'SG', 'Other'];
+const COUNTRIES = COUNTRY_DATA.map((c) => c.code);
+const COUNTRY_NAME = Object.fromEntries(COUNTRY_DATA.map((c) => [c.code, c.name]));
 const BANKS = ['HDFC Bank', 'ICICI Bank', 'State Bank of India', 'Axis Bank', 'Kotak Mahindra Bank', 'Citibank', 'Chase', 'Bank of America', 'Barclays', 'HSBC'];
 // Demo promo codes (). flat = fixed off in order currency; pct = fraction.
 const CODES = { SAVE10: { type: 'pct', value: 0.10, kind: 'Promo code' }, WELCOME5: { type: 'flat', value: 5, kind: 'Gift card' } };
@@ -17,18 +19,10 @@ const SUPPORTED_BRANDS = ['visa', 'mastercard'];
 // One friendly, on-brand line for any error anywhere in the checkout.
 const SLANG = "Oops, that didn't work — give it another shot.";
 
-// Per-country dialling code + expected national-number length for WhatsApp.
-const DIAL = { US: '+1', CA: '+1', IN: '+91', GB: '+44', AU: '+61', AE: '+971', SG: '+65' };
-// Dial-code dropdown options (label disambiguates shared +1).
-const DIAL_LIST = [
-  { d: '+1', label: 'US/CA +1' },
-  { d: '+91', label: 'IN +91' },
-  { d: '+44', label: 'GB +44' },
-  { d: '+61', label: 'AU +61' },
-  { d: '+971', label: 'AE +971' },
-  { d: '+65', label: 'SG +65' },
-];
-// Expected national significant number length, keyed by dial code.
+// Per-country dialling code, derived from the full country list.
+const DIAL = Object.fromEntries(COUNTRY_DATA.map((c) => [c.code, c.dial]));
+// Expected national significant number length, keyed by dial code (strict where
+// known; other codes fall back to a lenient 8-15 digit check).
 const NSN_BY_DIAL = { '+1': 10, '+91': 10, '+44': 10, '+61': 9, '+971': 9, '+65': 8 };
 // Compose an E.164 number from a dial code + the national number the user typed.
 function e164(dial, nsn) {
@@ -128,7 +122,8 @@ function validateZip(country, zip) {
 // NEXT_PUBLIC_MAPBOX_TOKEN (pk.*). When both unset, falls back to keyless OSM.
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 const RADAR_KEY = process.env.NEXT_PUBLIC_RADAR_KEY || '';
-const ISO2 = { US: 'US', IN: 'IN', GB: 'GB', CA: 'CA', AU: 'AU', AE: 'AE', SG: 'SG' };
+// Country values are already ISO-3166 alpha-2, so ISO2 is an identity map.
+const ISO2 = new Proxy({}, { get: (_, p) => (typeof p === 'string' ? p : undefined) });
 
 async function geocodeRadar(q, country) {
   if (!RADAR_KEY) throw new Error('no radar key');
@@ -149,7 +144,6 @@ async function geocodeRadar(q, country) {
 
 // ZIP -> city/state (free, keyless). Zippopotam covers many countries;
 // postalpincode.in handles India. Best-effort: returns null on miss.
-const ZIPPO_CC = { US: 'us', GB: 'gb', CA: 'ca', AU: 'au', SG: 'sg', DE: 'de', FR: 'fr', ES: 'es', IT: 'it', NL: 'nl' };
 async function zipLookup(country, zip) {
   const z = String(zip || '').trim().toUpperCase();
   if (!z) return null;
@@ -162,7 +156,7 @@ async function zipLookup(country, zip) {
       const po = j?.[0]?.PostOffice?.[0];
       return po ? { city: po.District || po.Block || '', state: po.State || '' } : null;
     }
-    const cc = ZIPPO_CC[country];
+    const cc = String(country || '').toLowerCase();
     if (!cc) return null;
     const q = country === 'US' ? z.split('-')[0] : z;
     const r = await fetch(`https://api.zippopotam.us/${cc}/${encodeURIComponent(q)}`);
@@ -277,7 +271,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const [step, setStep] = useState(0);                 // 0 details | 1 payment | 2 review
   const [detailsDone, setDetailsDone] = useState(false);
   const [amount, setAmount] = useState('');
-  const [info, setInfo] = useState({ name: '', email: '', dial: '+1', whatsapp: '', phone: '', country: 'US', address1: '', address2: '', city: '', state: '', zip: '' });
+  const [info, setInfo] = useState({ name: '', email: '', wc: 'US', whatsapp: '', phone: '', country: 'US', address1: '', address2: '', city: '', state: '', zip: '' });
 
   const [method, setMethod] = useState(null);
   const [savedCards, setSavedCards] = useState([]);
@@ -430,23 +424,23 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const onName = (e) => setField('name', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 60));
   const resetVrf = (ch) => setVrf((v) => ({ ...v, [ch]: { ...blankVrf } }));
   const onEmail = (e) => { setField('email', e.target.value.replace(/\s/g, '').slice(0, 254)); resetVrf('email'); };
-  // Digits only, single leading '+', capped to the country's max length.
   // WhatsApp: national number only (digits, no dial code / '+').
   const onWhatsapp = (e) => {
-    const max = (NSN_BY_DIAL[info.dial] || 15);
+    const max = (NSN_BY_DIAL[DIAL[info.wc]] || 15);
     setField('whatsapp', e.target.value.replace(/\D/g, '').slice(0, max));
     resetVrf('whatsapp');
   };
-  const onDial = (e) => { setField('dial', e.target.value); resetVrf('whatsapp'); };
+  // WhatsApp dial country (drives the '+' code); any country selectable.
+  const onWc = (e) => { setField('wc', e.target.value); resetVrf('whatsapp'); };
   // Alternate phone: digits only, freeform length.
   const onPhone = (e) => setField('phone', e.target.value.replace(/\D/g, '').slice(0, 15));
 
   // --- OTP verification (email + WhatsApp) ---
   const setVrfField = (ch, patch) => setVrf((v) => ({ ...v, [ch]: { ...v[ch], ...patch } }));
   async function sendCode(ch) {
-    const target = ch === 'email' ? info.email : e164(info.dial, info.whatsapp);
+    const target = ch === 'email' ? info.email : e164(DIAL[info.wc], info.whatsapp);
     if (ch === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) return fail('email');
-    if (ch === 'whatsapp' && !validateWhatsapp(info.dial, info.whatsapp)) return fail('whatsapp');
+    if (ch === 'whatsapp' && !validateWhatsapp(DIAL[info.wc], info.whatsapp)) return fail('whatsapp');
     setVrfField(ch, { loading: true, msg: null });
     try {
       const res = await fetch('/api/verify/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: ch, target }) });
@@ -457,7 +451,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
   async function checkCode(ch) {
-    const target = ch === 'email' ? info.email : e164(info.dial, info.whatsapp);
+    const target = ch === 'email' ? info.email : e164(DIAL[info.wc], info.whatsapp);
     const code = vrf[ch].code;
     if (!/^\d{6}$/.test(code)) { setVrfField(ch, { msg: { type: 'error', t: 'Enter the 6-digit code' } }); return fail(ch); }
     setVrfField(ch, { loading: true, msg: null });
@@ -546,8 +540,8 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     const country = e.target.value;
     setInfo((f) => {
       const next = { ...f, country };
-      // Switch dial code to the new country's default only if the user hadn't overridden it.
-      if (f.dial === DIAL[f.country]) next.dial = DIAL[country] || f.dial;
+      // Sync the WhatsApp dial country to billing country unless the user overrode it.
+      if (f.wc === f.country) next.wc = country;
       next.zip = ''; // ZIP format differs per country — clear stale value
       next.state = ''; next.city = ''; // state list + city change per country
       return next;
@@ -563,7 +557,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     if (!info.name) return fail('name');
     if (!info.email) return fail('email');
     if (!info.whatsapp) return fail('whatsapp');
-    if (!validateWhatsapp(info.dial, info.whatsapp)) return fail('whatsapp');
+    if (!validateWhatsapp(DIAL[info.wc], info.whatsapp)) return fail('whatsapp');
     if (!info.address1) return fail('address1');
     const sl = statesFor(info.country);
     if (sl ? !sl.includes(info.state) : !info.state) return fail('state');
@@ -637,7 +631,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
 
     const bm = backendMethod();
     const body = {
-      name: info.name, email: info.email, whatsapp: e164(info.dial, info.whatsapp), phone: info.phone,
+      name: info.name, email: info.email, whatsapp: e164(DIAL[info.wc], info.whatsapp), phone: info.phone,
       country: info.country, address1: info.address1, address2: info.address2,
       city: info.city, state: info.state, zip: info.zip,
       amount: String(total), method: bm,
@@ -668,7 +662,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     const now = new Date();
     const billing = [info.address1, info.address2, info.city, info.state, info.zip, info.country].filter(Boolean).join(', ');
     const contactRows = [
-      info.whatsapp && `WhatsApp: ${esc(e164(info.dial, info.whatsapp))}`,
+      info.whatsapp && `WhatsApp: ${esc(e164(DIAL[info.wc], info.whatsapp))}`,
       info.phone && `Phone: ${esc(info.phone)}`,
       info.email && `Email: ${esc(info.email)}`,
     ].filter(Boolean).map((l) => `<div>${l}</div>`).join('');
@@ -915,8 +909,8 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                         <label className="field-label required">WhatsApp number</label>
                         <div className="phone-verification">
                           <div className="phone-control">
-                            <select className="dial-select" value={info.dial} onChange={onDial} aria-label="Country dialling code">
-                              {DIAL_LIST.map((o) => <option key={o.label} value={o.d}>{o.label}</option>)}
+                            <select className="dial-select" value={info.wc} onChange={onWc} aria-label="Country dialling code">
+                              {COUNTRY_DATA.map((c) => <option key={c.code} value={c.code}>{c.code} {c.dial}</option>)}
                             </select>
                             <input className={cls('whatsapp')} type="tel" inputMode="numeric" maxLength={15} value={info.whatsapp} onChange={onWhatsapp} placeholder="98765 43210" />
                           </div>
@@ -988,7 +982,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                     <input className={cls('zip')} maxLength={zipRule(info.country).max} value={info.zip} onChange={onZip} placeholder={zipRule(info.country).ph} /></div>
 
                   <div className="field"><label className="field-label required">Country</label>
-                    <select className="field-control" value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c}>{c}</option>)}</select></div>
+                    <select className="field-control" value={info.country} onChange={onCountry}>{COUNTRIES.map((c) => <option key={c} value={c}>{COUNTRY_NAME[c]}</option>)}</select></div>
                 </div>
 
                 <button className="continue-button" type="submit">Continue to payment</button>

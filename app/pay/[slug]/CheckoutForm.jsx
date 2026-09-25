@@ -11,7 +11,9 @@ const BANKS = ['HDFC Bank', 'ICICI Bank', 'State Bank of India', 'Axis Bank', 'K
 const CODES = { SAVE10: { type: 'pct', value: 0.10, kind: 'Promo code' }, WELCOME5: { type: 'flat', value: 5, kind: 'Gift card' } };
 const COD_FEE = 0.99;
 // Where the customer lands after a completed payment.
-const HOME_URL = 'https://payunexa.com';
+// Homepage lives at the app root (app.payunexa.com/). Customers return here
+// after payment, once they've entered a WhatsApp number or skipped.
+const HOME_URL = '/';
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const MIN_AMOUNT = 1;
 const MAX_AMOUNT = 9999;
@@ -405,8 +407,9 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   // Delayed so they can download the invoice first.
   useEffect(() => {
     if (view !== 'success') return;
-    if (help.wa || help.sent) return; // don't redirect while they're contacting us
-    const t = setTimeout(() => { window.location.href = HOME_URL; }, 12000);
+    if (help.sent) { const t = setTimeout(() => { window.location.href = HOME_URL; }, 3000); return () => clearTimeout(t); }
+    if (help.wa) return; // customer is typing a number — wait for them
+    const t = setTimeout(() => { window.location.href = HOME_URL; }, 20000);
     return () => clearTimeout(t);
   }, [view, help.wa, help.sent]);
 
@@ -784,7 +787,8 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
       });
     } catch { /* best-effort; confirmation already shown */ }
   }
-  const helpBlock = (
+  // onSkip: what happens when the customer skips (redirect on success, close on failed).
+  const helpUI = (onSkip) => (
     <div className="help-box">
       <h3 className="help-title">Need help? Contact us</h3>
       {help.sent ? (
@@ -799,8 +803,9 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
               </select>
               <input type="tel" inputMode="numeric" maxLength={15} value={help.wa} onChange={onHelpWa} placeholder="WhatsApp number" />
             </div>
-            <button type="submit" className="primary" style={{ width: 'auto', minWidth: 130 }}>Submit</button>
+            <button type="submit" className="primary" style={{ width: 'auto', minWidth: 120 }}>Submit</button>
           </div>
+          {onSkip && <button type="button" className="help-skip" onClick={onSkip}>Skip &amp; continue →</button>}
         </form>
       )}
     </div>
@@ -838,10 +843,12 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
               </div>
               <div className="succ-actions">
                 <button className="primary" style={{ maxWidth: 240 }} onClick={downloadInvoice}>Download invoice (PDF)</button>
-                <button className="btn-secondary" onClick={() => { window.location.href = HOME_URL; }}>Go to payUnexa.com</button>
+                <button className="btn-secondary" onClick={() => { window.location.href = HOME_URL; }}>Go to homepage</button>
               </div>
-              {helpBlock}
-              {!(help.wa || help.sent) && <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to payUnexa.com in a few seconds…</p>}
+              {helpUI(() => { window.location.href = HOME_URL; })}
+              {help.sent
+                ? <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to the homepage…</p>
+                : !help.wa && <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to the homepage shortly…</p>}
             </div>
           </section>
           {puxFooter}
@@ -1236,7 +1243,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
             <h3 style={{ marginTop: 12 }}>Payment Declined</h3>
             <div className="proc-sub" style={{ marginTop: 6 }}>Your payment could not be completed. Try another method.</div>
             <button className="primary" style={{ marginTop: 16, maxWidth: 200 }} onClick={() => setResult(null)}>Try again</button>
-            {helpBlock}
+            {helpUI(() => setResult(null))}
           </div>
         </div>
       )}

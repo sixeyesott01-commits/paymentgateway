@@ -1,22 +1,10 @@
-import SiteHeader from '@/app/components/SiteHeader';
-import SiteFooter from '@/app/components/SiteFooter';
+import HomePage from '@/app/components/home/HomePage';
+
+export const metadata = {
+  title: 'payUnexa — Payment infrastructure for modern businesses',
+  description: 'payUnexa gives businesses the infrastructure to accept, manage, and scale digital payments through a simple, reliable payment platform.',
+};
 
 export default function Home() {
-  return (
-    <>
-      <SiteHeader title="payUnexa" />
-      <div className="container">
-        <div className="card center">
-          <h1>Payment Gateway</h1>
-          <p className="muted">
-            This is the API + hosting root. There is nothing to see here.
-          </p>
-          <p className="muted">
-            Admins go to <a href="/admin">/admin</a>. Customers open the payment link they were sent.
-          </p>
-        </div>
-      </div>
-      <SiteFooter />
-    </>
-  );
+  return <HomePage />;
 }

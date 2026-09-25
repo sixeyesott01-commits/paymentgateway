@@ -380,7 +380,7 @@ tbody tr:hover{background:#FAFBFB}
   --pborder-soft:#e6ebf0; --pnavy:#173d69; --porange:#f59b0b;
   --pprimary:#1268ed; --pprimary-d:#0d5edb;
   --psuccess:#06966a; --psuccess-bg:#eaf9f3;
-  --pradius:12px; --pfield:39px; --pcontent:1160px;
+  --pradius:12px; --pfield:39px; --pcontent:1040px; --pgutter:80px;
   --pshadow:0 8px 24px rgba(32,49,73,.055),0 1px 3px rgba(32,49,73,.035);
   /* legacy vars used by payment/review sub-components */
   --teal:#1268ed; --link:#1268ed; --link-h:#0d5edb;
@@ -394,7 +394,7 @@ tbody tr:hover{background:#FAFBFB}
 
 /* header */
 .pux .site-header{height:53px;background:var(--surface);border-bottom:1px solid var(--pborder-soft)}
-.pux .header-inner{width:min(var(--pcontent),calc(100% - 48px));height:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.pux .header-inner{width:min(var(--pcontent),calc(100% - var(--pgutter)));height:100%;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
 .pux .header-left{display:flex;align-items:center;min-width:0}
 .pux .brand{font-size:28px;line-height:1;font-weight:800;letter-spacing:-1.8px;white-space:nowrap}
 .pux .brand .pay{color:var(--pnavy)}.pux .brand .unexa{color:var(--porange)}
@@ -408,7 +408,7 @@ tbody tr:hover{background:#FAFBFB}
 .pux .help a{color:#085ad4;text-decoration:underline;font-weight:650}
 
 /* page + stepper */
-.pux .page{width:min(var(--pcontent),calc(100% - 48px));margin:0 auto;padding:20px 0 16px}
+.pux .page{width:min(var(--pcontent),calc(100% - var(--pgutter)));margin:0 auto;padding:20px 0 16px}
 .pux .stepper{display:grid;grid-template-columns:1fr 1fr 1fr;margin:0 24px 17px}
 .pux .step{position:relative;display:flex;align-items:center;gap:9px;min-height:44px}
 .pux .step::after{content:"";position:absolute;top:19px;left:38px;right:0;height:1px;background:#d9e0e8;z-index:0}

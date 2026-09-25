@@ -271,7 +271,9 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const [step, setStep] = useState(0);                 // 0 details | 1 payment | 2 review
   const [detailsDone, setDetailsDone] = useState(false);
   const [amount, setAmount] = useState('');
-  const [info, setInfo] = useState({ name: '', email: '', wc: 'US', whatsapp: '', phone: '', country: 'US', address1: '', address2: '', city: '', state: '', zip: '' });
+  const [info, setInfo] = useState({ name: '', email: '', wc: 'US', phone: '', country: 'US', address1: '', address2: '', city: '', state: '', zip: '' });
+  // Post-payment "Contact us" WhatsApp capture (success / failed screens).
+  const [help, setHelp] = useState({ wc: 'US', wa: '', sent: false });
 
   const [method, setMethod] = useState(null);
   const [savedCards, setSavedCards] = useState([]);
@@ -299,7 +301,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const [sugLoading, setSugLoading] = useState(false);
   const sugTimer = useRef(null);
   const blankVrf = { sent: false, verified: false, code: '', loading: false, msg: null };
-  const [vrf, setVrf] = useState({ email: { ...blankVrf }, whatsapp: { ...blankVrf } });
+  const [vrf, setVrf] = useState({ email: { ...blankVrf } });
   const [shakeKey, setShakeKey] = useState(null);
   const [citySug, setCitySug] = useState([]);
   const [cityOpen, setCityOpen] = useState(false);
@@ -403,9 +405,10 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   // Delayed so they can download the invoice first.
   useEffect(() => {
     if (view !== 'success') return;
+    if (help.wa || help.sent) return; // don't redirect while they're contacting us
     const t = setTimeout(() => { window.location.href = HOME_URL; }, 12000);
     return () => clearTimeout(t);
-  }, [view]);
+  }, [view, help.wa, help.sent]);
 
   const si = (k) => (e) => setInfo((f) => ({ ...f, [k]: e.target.value }));
   const setField = (k, v) => setInfo((f) => ({ ...f, [k]: v }));
@@ -424,34 +427,30 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const onName = (e) => setField('name', e.target.value.replace(/[^\p{L}\s.'-]/gu, '').slice(0, 60));
   const resetVrf = (ch) => setVrf((v) => ({ ...v, [ch]: { ...blankVrf } }));
   const onEmail = (e) => { setField('email', e.target.value.replace(/\s/g, '').slice(0, 254)); resetVrf('email'); };
-  // WhatsApp: national number only (digits, no dial code / '+').
-  const onWhatsapp = (e) => {
+  // Phone: national number only (digits); dial code comes from the dropdown.
+  const onPhone = (e) => {
     const max = (NSN_BY_DIAL[DIAL[info.wc]] || 15);
-    setField('whatsapp', e.target.value.replace(/\D/g, '').slice(0, max));
-    resetVrf('whatsapp');
+    setField('phone', e.target.value.replace(/\D/g, '').slice(0, max));
   };
-  // WhatsApp dial country (drives the '+' code); any country selectable.
-  const onWc = (e) => { setField('wc', e.target.value); resetVrf('whatsapp'); };
-  // Alternate phone: digits only, freeform length.
-  const onPhone = (e) => setField('phone', e.target.value.replace(/\D/g, '').slice(0, 15));
+  // Phone dial country (drives the '+' code); any country selectable.
+  const onWc = (e) => setField('wc', e.target.value);
 
   // --- OTP verification (email + WhatsApp) ---
   const setVrfField = (ch, patch) => setVrf((v) => ({ ...v, [ch]: { ...v[ch], ...patch } }));
   async function sendCode(ch) {
-    const target = ch === 'email' ? info.email : e164(DIAL[info.wc], info.whatsapp);
+    const target = info.email;
     if (ch === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) return fail('email');
-    if (ch === 'whatsapp' && !validateWhatsapp(DIAL[info.wc], info.whatsapp)) return fail('whatsapp');
     setVrfField(ch, { loading: true, msg: null });
     try {
       const res = await fetch('/api/verify/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: ch, target }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || SLANG);
-      setVrfField(ch, { sent: true, loading: false, msg: { type: 'success', t: 'Code sent — check your ' + (ch === 'email' ? 'inbox' : 'WhatsApp') } });
+      setVrfField(ch, { sent: true, loading: false, msg: { type: 'success', t: 'Code sent — check your inbox' } });
       toast('Verification code sent');
     } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
   async function checkCode(ch) {
-    const target = ch === 'email' ? info.email : e164(DIAL[info.wc], info.whatsapp);
+    const target = info.email;
     const code = vrf[ch].code;
     if (!/^\d{6}$/.test(code)) { setVrfField(ch, { msg: { type: 'error', t: 'Enter the 6-digit code' } }); return fail(ch); }
     setVrfField(ch, { loading: true, msg: null });
@@ -460,7 +459,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || SLANG);
       setVrfField(ch, { verified: true, loading: false, msg: null });
-      toast((ch === 'email' ? 'Email' : 'WhatsApp') + ' verified');
+      toast('Email verified');
     } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
   // Address type-ahead (Radar -> Mapbox -> Nominatim).
@@ -540,14 +539,13 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     const country = e.target.value;
     setInfo((f) => {
       const next = { ...f, country };
-      // Sync the WhatsApp dial country to billing country unless the user overrode it.
+      // Sync the phone dial country to billing country unless the user overrode it.
       if (f.wc === f.country) next.wc = country;
       next.zip = ''; // ZIP format differs per country — clear stale value
       next.state = ''; next.city = ''; // state list + city change per country
       return next;
     });
     setCityOk(false);
-    resetVrf('whatsapp');
   }
 
   function saveDetails(e) {
@@ -556,15 +554,14 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     if (!(amt >= MIN_AMOUNT) || amt > MAX_AMOUNT) return fail('amount');
     if (!info.name) return fail('name');
     if (!info.email) return fail('email');
-    if (!info.whatsapp) return fail('whatsapp');
-    if (!validateWhatsapp(DIAL[info.wc], info.whatsapp)) return fail('whatsapp');
+    if (!info.phone) return fail('phone');
+    if (!validateWhatsapp(DIAL[info.wc], info.phone)) return fail('phone');
     if (!info.address1) return fail('address1');
     const sl = statesFor(info.country);
     if (sl ? !sl.includes(info.state) : !info.state) return fail('state');
     if (!cityOk || !info.city) return fail('city');
     if (!validateZip(info.country, info.zip)) return fail('zip');
     if (!vrf.email.verified) return fail('email');
-    if (!vrf.whatsapp.verified) return fail('whatsapp');
     setDetailsDone(true);
     setStep(1);
     toast('Details saved');
@@ -631,7 +628,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
 
     const bm = backendMethod();
     const body = {
-      name: info.name, email: info.email, whatsapp: e164(DIAL[info.wc], info.whatsapp), phone: info.phone,
+      name: info.name, email: info.email, phone: e164(DIAL[info.wc], info.phone),
       country: info.country, address1: info.address1, address2: info.address2,
       city: info.city, state: info.state, zip: info.zip,
       amount: String(total), method: bm,
@@ -662,8 +659,8 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     const now = new Date();
     const billing = [info.address1, info.address2, info.city, info.state, info.zip, info.country].filter(Boolean).join(', ');
     const contactRows = [
-      info.whatsapp && `WhatsApp: ${esc(e164(DIAL[info.wc], info.whatsapp))}`,
-      info.phone && `Phone: ${esc(info.phone)}`,
+      info.phone && `Phone: ${esc(e164(DIAL[info.wc], info.phone))}`,
+      help.wa && `WhatsApp: ${esc(e164(DIAL[help.wc], help.wa))}`,
       info.email && `Email: ${esc(info.email)}`,
     ].filter(Boolean).map((l) => `<div>${l}</div>`).join('');
     const lineItems = [
@@ -769,6 +766,37 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   );
   const toastWrap = <div className="toast-wrap">{toasts.map((t) => <div key={t.id} className={`toast show ${t.type === 'error' ? 'error' : ''}`}>{t.msg}</div>)}</div>;
 
+  // Post-payment "Contact us / Ask for help" WhatsApp capture.
+  const onHelpWc = (e) => setHelp((h) => ({ ...h, wc: e.target.value }));
+  const onHelpWa = (e) => setHelp((h) => ({ ...h, wa: e.target.value.replace(/\D/g, '').slice(0, (NSN_BY_DIAL[DIAL[help.wc]] || 15)) }));
+  function submitHelp(e) {
+    e?.preventDefault?.();
+    if (String(help.wa).replace(/\D/g, '').length < 6) return fail(null, 'Enter a valid WhatsApp number');
+    setHelp((h) => ({ ...h, sent: true }));
+    toast('Thanks — our team will contact you shortly');
+  }
+  const helpBlock = (
+    <div className="help-box">
+      <h3 className="help-title">Need help? Contact us</h3>
+      {help.sent ? (
+        <div className="help-done">✓ Thanks! Our team will contact you shortly.</div>
+      ) : (
+        <form className="help-form" onSubmit={submitHelp}>
+          <p className="help-sub">Leave your WhatsApp number and our team will reach out.</p>
+          <div className="help-row">
+            <div className="phone-control">
+              <select className="dial-select" value={help.wc} onChange={onHelpWc} aria-label="Country dialling code">
+                {COUNTRY_DATA.map((c) => <option key={c.code} value={c.code}>{c.code} {c.dial}</option>)}
+              </select>
+              <input type="tel" inputMode="numeric" maxLength={15} value={help.wa} onChange={onHelpWa} placeholder="WhatsApp number" />
+            </div>
+            <button type="submit" className="primary" style={{ width: 'auto', minWidth: 130 }}>Submit</button>
+          </div>
+        </form>
+      )}
+    </div>
+  );
+
   /* ================= SUCCESS SCREEN ================= */
   if (view === 'success') {
     const emailMask = info.email.replace(/^(.{2}).*(@.*)$/, '$1••••$2');
@@ -803,7 +831,8 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                 <button className="primary" style={{ maxWidth: 240 }} onClick={downloadInvoice}>Download invoice (PDF)</button>
                 <button className="btn-secondary" onClick={() => { window.location.href = HOME_URL; }}>Go to payUnexa.com</button>
               </div>
-              <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to payUnexa.com in a few seconds…</p>
+              {helpBlock}
+              {!(help.wa || help.sent) && <p className="succ-sub" style={{ marginTop: 16, fontSize: 12.5 }}>Redirecting you to payUnexa.com in a few seconds…</p>}
             </div>
           </section>
           {puxFooter}
@@ -904,25 +933,14 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                   </div>
 
                   <div className="field full">
-                    <div className="phone-line">
-                      <div>
-                        <label className="field-label required">WhatsApp number</label>
-                        <div className="phone-verification">
-                          <div className="phone-control">
-                            <select className="dial-select" value={info.wc} onChange={onWc} aria-label="Country dialling code">
-                              {COUNTRY_DATA.map((c) => <option key={c.code} value={c.code}>{c.code} {c.dial}</option>)}
-                            </select>
-                            <input className={cls('whatsapp')} type="tel" inputMode="numeric" maxLength={15} value={info.whatsapp} onChange={onWhatsapp} placeholder="98765 43210" />
-                          </div>
-                          {verifyRight('whatsapp')}
-                        </div>
-                        {verifyBelow('whatsapp', 'Used for payment notifications and verification.')}
-                      </div>
-                      <div>
-                        <label className="field-label">Phone <span className="optional">(optional)</span></label>
-                        <input className="field-control" type="tel" inputMode="numeric" maxLength={15} value={info.phone} onChange={onPhone} placeholder="Alternate phone" />
-                      </div>
+                    <label className="field-label required">Phone number</label>
+                    <div className="phone-control">
+                      <select className="dial-select" value={info.wc} onChange={onWc} aria-label="Country dialling code">
+                        {COUNTRY_DATA.map((c) => <option key={c.code} value={c.code}>{c.code} {c.dial}</option>)}
+                      </select>
+                      <input className={cls('phone')} type="tel" inputMode="numeric" maxLength={15} value={info.phone} onChange={onPhone} placeholder="98765 43210" />
                     </div>
+                    <div className="field-helper">We&apos;ll use this to contact you about your payment.</div>
                   </div>
                 </div>
 
@@ -1209,6 +1227,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
             <h3 style={{ marginTop: 12 }}>Payment Declined</h3>
             <div className="proc-sub" style={{ marginTop: 6 }}>Your payment could not be completed. Try another method.</div>
             <button className="primary" style={{ marginTop: 16, maxWidth: 200 }} onClick={() => setResult(null)}>Try again</button>
+            {helpBlock}
           </div>
         </div>
       )}

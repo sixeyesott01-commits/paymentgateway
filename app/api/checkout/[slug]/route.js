@@ -60,9 +60,9 @@ export async function POST(req, { params }) {
   let discount = Number(body.discount);
   discount = Number.isFinite(discount) && discount >= 0 ? Math.round(discount * 100) / 100 : 0;
 
-  if (!name || !email || !whatsapp) {
+  if (!name || !email || !phone) {
     return NextResponse.json(
-      { error: 'name, email and whatsapp are required' },
+      { error: 'name, email and phone are required' },
       { status: 400 }
     );
   }

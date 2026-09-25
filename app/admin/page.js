@@ -191,8 +191,14 @@ export default function Admin() {
                       <span className="muted">{o.customer_email}</span>
                       <br />
                       <span className="muted">
-                        {o.customer_whatsapp} {o.customer_country ? `· ${o.customer_country}` : ''}
+                        {o.customer_phone || '—'} {o.customer_country ? `· ${o.customer_country}` : ''}
                       </span>
+                      {o.customer_whatsapp && (
+                        <>
+                          <br />
+                          <span className="muted">WhatsApp: {o.customer_whatsapp}</span>
+                        </>
+                      )}
                       {(o.customer_address1 || o.customer_zip) && (
                         <>
                           <br />

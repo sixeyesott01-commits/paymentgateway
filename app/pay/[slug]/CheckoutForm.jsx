@@ -769,11 +769,20 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   // Post-payment "Contact us / Ask for help" WhatsApp capture.
   const onHelpWc = (e) => setHelp((h) => ({ ...h, wc: e.target.value }));
   const onHelpWa = (e) => setHelp((h) => ({ ...h, wa: e.target.value.replace(/\D/g, '').slice(0, (NSN_BY_DIAL[DIAL[help.wc]] || 15)) }));
-  function submitHelp(e) {
+  async function submitHelp(e) {
     e?.preventDefault?.();
     if (String(help.wa).replace(/\D/g, '').length < 6) return fail(null, 'Enter a valid WhatsApp number');
+    const number = e164(DIAL[help.wc], help.wa);
     setHelp((h) => ({ ...h, sent: true }));
     toast('Thanks — our team will contact you shortly');
+    // Persist to the order so it shows in the admin panel.
+    try {
+      await fetch(`/api/orders/${slug}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ whatsapp: number }),
+      });
+    } catch { /* best-effort; confirmation already shown */ }
   }
   const helpBlock = (
     <div className="help-box">

@@ -19,18 +19,28 @@ const SLANG = "Oops, that didn't work — give it another shot.";
 
 // Per-country dialling code + expected national-number length for WhatsApp.
 const DIAL = { US: '+1', CA: '+1', IN: '+91', GB: '+44', AU: '+61', AE: '+971', SG: '+65' };
-const NSN_LEN = { US: 10, CA: 10, IN: 10, GB: 10, AU: 9, AE: 9, SG: 8 };
-function validateWhatsapp(country, raw) {
-  const cleaned = String(raw || '').replace(/[^\d+]/g, '');
-  const cc = DIAL[country];
-  if (!cc) { // 'Other' / unknown — accept any E.164-ish number
-    const digits = cleaned.replace(/\D/g, '');
-    return cleaned.startsWith('+') && digits.length >= 8 && digits.length <= 15;
-  }
-  if (!cleaned.startsWith(cc)) return false;
-  const nsn = cleaned.slice(cc.length).replace(/\D/g, '');
-  const need = NSN_LEN[country];
-  return need ? nsn.length === need : (nsn.length >= 6 && nsn.length <= 12);
+// Dial-code dropdown options (label disambiguates shared +1).
+const DIAL_LIST = [
+  { d: '+1', label: 'US/CA +1' },
+  { d: '+91', label: 'IN +91' },
+  { d: '+44', label: 'GB +44' },
+  { d: '+61', label: 'AU +61' },
+  { d: '+971', label: 'AE +971' },
+  { d: '+65', label: 'SG +65' },
+];
+// Expected national significant number length, keyed by dial code.
+const NSN_BY_DIAL = { '+1': 10, '+91': 10, '+44': 10, '+61': 9, '+971': 9, '+65': 8 };
+// Compose an E.164 number from a dial code + the national number the user typed.
+function e164(dial, nsn) {
+  const d = String(nsn || '').replace(/\D/g, '');
+  return dial && d ? dial + d : '';
+}
+// Validate the national number (digits only) against the selected dial code.
+function validateWhatsapp(dial, nsn) {
+  const digits = String(nsn || '').replace(/\D/g, '');
+  const need = NSN_BY_DIAL[dial];
+  if (!need) return digits.length >= 8 && digits.length <= 15;
+  return digits.length === need;
 }
 
 // ---- States / regions per country (dropdown source + validation) ----
@@ -267,7 +277,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const [step, setStep] = useState(0);                 // 0 details | 1 payment | 2 review
   const [detailsDone, setDetailsDone] = useState(false);
   const [amount, setAmount] = useState('');
-  const [info, setInfo] = useState({ name: '', email: '', whatsapp: '', phone: '', country: 'US', address1: '', address2: '', city: '', state: '', zip: '' });
+  const [info, setInfo] = useState({ name: '', email: '', dial: '+1', whatsapp: '', phone: '', country: 'US', address1: '', address2: '', city: '', state: '', zip: '' });
 
   const [method, setMethod] = useState(null);
   const [savedCards, setSavedCards] = useState([]);
@@ -421,20 +431,22 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
   const resetVrf = (ch) => setVrf((v) => ({ ...v, [ch]: { ...blankVrf } }));
   const onEmail = (e) => { setField('email', e.target.value.replace(/\s/g, '').slice(0, 254)); resetVrf('email'); };
   // Digits only, single leading '+', capped to the country's max length.
-  const onPhoneLike = (k) => (e) => {
-    const cc = DIAL[info.country];
-    const maxDigits = cc ? cc.replace('+', '').length + (NSN_LEN[info.country] || 12) : 15;
-    const digits = e.target.value.replace(/\D/g, '').slice(0, maxDigits);
-    setField(k, digits ? '+' + digits : '');
-    if (k === 'whatsapp') resetVrf('whatsapp');
+  // WhatsApp: national number only (digits, no dial code / '+').
+  const onWhatsapp = (e) => {
+    const max = (NSN_BY_DIAL[info.dial] || 15);
+    setField('whatsapp', e.target.value.replace(/\D/g, '').slice(0, max));
+    resetVrf('whatsapp');
   };
+  const onDial = (e) => { setField('dial', e.target.value); resetVrf('whatsapp'); };
+  // Alternate phone: digits only, freeform length.
+  const onPhone = (e) => setField('phone', e.target.value.replace(/\D/g, '').slice(0, 15));
 
   // --- OTP verification (email + WhatsApp) ---
   const setVrfField = (ch, patch) => setVrf((v) => ({ ...v, [ch]: { ...v[ch], ...patch } }));
   async function sendCode(ch) {
-    const target = ch === 'email' ? info.email : info.whatsapp;
+    const target = ch === 'email' ? info.email : e164(info.dial, info.whatsapp);
     if (ch === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(info.email)) return fail('email');
-    if (ch === 'whatsapp' && !validateWhatsapp(info.country, info.whatsapp)) return fail('whatsapp');
+    if (ch === 'whatsapp' && !validateWhatsapp(info.dial, info.whatsapp)) return fail('whatsapp');
     setVrfField(ch, { loading: true, msg: null });
     try {
       const res = await fetch('/api/verify/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: ch, target }) });
@@ -445,7 +457,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     } catch (e) { setVrfField(ch, { loading: false, msg: { type: 'error', t: e.message } }); fail(ch); }
   }
   async function checkCode(ch) {
-    const target = ch === 'email' ? info.email : info.whatsapp;
+    const target = ch === 'email' ? info.email : e164(info.dial, info.whatsapp);
     const code = vrf[ch].code;
     if (!/^\d{6}$/.test(code)) { setVrfField(ch, { msg: { type: 'error', t: 'Enter the 6-digit code' } }); return fail(ch); }
     setVrfField(ch, { loading: true, msg: null });
@@ -534,7 +546,8 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     const country = e.target.value;
     setInfo((f) => {
       const next = { ...f, country };
-      if (!f.whatsapp || f.whatsapp === DIAL[f.country]) next.whatsapp = DIAL[country] || '';
+      // Switch dial code to the new country's default only if the user hadn't overridden it.
+      if (f.dial === DIAL[f.country]) next.dial = DIAL[country] || f.dial;
       next.zip = ''; // ZIP format differs per country — clear stale value
       next.state = ''; next.city = ''; // state list + city change per country
       return next;
@@ -550,7 +563,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     if (!info.name) return fail('name');
     if (!info.email) return fail('email');
     if (!info.whatsapp) return fail('whatsapp');
-    if (!validateWhatsapp(info.country, info.whatsapp)) return fail('whatsapp');
+    if (!validateWhatsapp(info.dial, info.whatsapp)) return fail('whatsapp');
     if (!info.address1) return fail('address1');
     const sl = statesFor(info.country);
     if (sl ? !sl.includes(info.state) : !info.state) return fail('state');
@@ -624,7 +637,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
 
     const bm = backendMethod();
     const body = {
-      name: info.name, email: info.email, whatsapp: info.whatsapp, phone: info.phone,
+      name: info.name, email: info.email, whatsapp: e164(info.dial, info.whatsapp), phone: info.phone,
       country: info.country, address1: info.address1, address2: info.address2,
       city: info.city, state: info.state, zip: info.zip,
       amount: String(total), method: bm,
@@ -655,7 +668,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
     const now = new Date();
     const billing = [info.address1, info.address2, info.city, info.state, info.zip, info.country].filter(Boolean).join(', ');
     const contactRows = [
-      info.whatsapp && `WhatsApp: ${esc(info.whatsapp)}`,
+      info.whatsapp && `WhatsApp: ${esc(e164(info.dial, info.whatsapp))}`,
       info.phone && `Phone: ${esc(info.phone)}`,
       info.email && `Email: ${esc(info.email)}`,
     ].filter(Boolean).map((l) => `<div>${l}</div>`).join('');
@@ -902,8 +915,10 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                         <label className="field-label required">WhatsApp number</label>
                         <div className="phone-verification">
                           <div className="phone-control">
-                            <span className="phone-prefix">{info.country} {DIAL[info.country] || ''} ▾</span>
-                            <input className={cls('whatsapp')} type="tel" maxLength={16} value={info.whatsapp} onChange={onPhoneLike('whatsapp')} placeholder={`${DIAL[info.country] || '+'} 555 123 4567`} />
+                            <select className="dial-select" value={info.dial} onChange={onDial} aria-label="Country dialling code">
+                              {DIAL_LIST.map((o) => <option key={o.label} value={o.d}>{o.label}</option>)}
+                            </select>
+                            <input className={cls('whatsapp')} type="tel" inputMode="numeric" maxLength={15} value={info.whatsapp} onChange={onWhatsapp} placeholder="98765 43210" />
                           </div>
                           {verifyRight('whatsapp')}
                         </div>
@@ -911,7 +926,7 @@ export default function CheckoutForm({ slug, currency = 'USD' }) {
                       </div>
                       <div>
                         <label className="field-label">Phone <span className="optional">(optional)</span></label>
-                        <input className="field-control" type="tel" maxLength={16} value={info.phone} onChange={onPhoneLike('phone')} placeholder="Alternate phone" />
+                        <input className="field-control" type="tel" inputMode="numeric" maxLength={15} value={info.phone} onChange={onPhone} placeholder="Alternate phone" />
                       </div>
                     </div>
                   </div>
